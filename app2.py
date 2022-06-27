@@ -12,9 +12,12 @@ from astropy.time import Time
 from astropy.utils.exceptions import AstropyWarning
 from collections import deque
 from pyqtgraph import PlotWidget, plot
-import pyqtgraph as pg, sys, requests, threading, time, json, queue, cv2, numpy as np, subprocess, datetime, os, tifffile as tiff, traceback, warnings
-
+import pyqtgraph as pg, sys, requests, threading, time, json, queue, numpy as np, subprocess, datetime, os, tifffile as tiff, traceback, warnings
+os.environ["OPENCV_LOG_LEVEL"] ="OFF"
+import cv2
 warnings.simplefilter('ignore', category=AstropyWarning)
+
+#############################################################################################
 
 kill_thread = False
 req_cmd = queue.Queue()
@@ -31,40 +34,47 @@ screen = None
 connection_ok = False
 filter_reset_done = False
 
+q_a120mc_platesolve = deque(maxlen=1)
+q_a120mc_raw        = deque(maxlen=2)
+q_a120mc_ready      = deque(maxlen=2)
+q_a120mc_save_to_file = deque(maxlen=100)
+q_a120mm_platesolve = deque(maxlen=1)
+q_a120mm_raw        = deque(maxlen=2)
+q_a120mm_ready      = deque(maxlen=2)
+q_a120mm_save_to_file = deque(maxlen=100)
+q_a183mm_platesolve   = deque(maxlen=1)
 q_a183mm_raw          = deque(maxlen=2)
 q_a183mm_ready        = deque(maxlen=2)
-q_a183mm_platesolve   = deque(maxlen=1)
 q_a183mm_save_to_file = deque(maxlen=100)
+q_a533mc_platesolve   = deque(maxlen=1)
+q_a533mc_raw          = deque(maxlen=2)
+q_a533mc_ready        = deque(maxlen=2)
+q_a533mc_save_to_file = deque(maxlen=100)
+q_a462mc_platesolve   = deque(maxlen=1)
 q_a462mc_raw          = deque(maxlen=2)
 q_a462mc_ready        = deque(maxlen=2)
-q_a462mc_platesolve   = deque(maxlen=1)
 q_a462mc_save_to_file = deque(maxlen=100)
-q_a120mm_save_to_file = deque(maxlen=100)
-q_a120mc_save_to_file = deque(maxlen=100)
-q_a120mm_ready      = deque(maxlen=2)
-q_a120mm_raw        = deque(maxlen=2)
-q_a120mm_platesolve = deque(maxlen=1)
-q_a120mc_ready      = deque(maxlen=2)
-q_a120mc_raw        = deque(maxlen=2)
-q_a120mc_platesolve = deque(maxlen=1)
-q_canon_ready      = deque(maxlen=1)
-q_canon_raw        = deque(maxlen=2)
 q_canon_platesolve = deque(maxlen=1)
+q_canon_raw        = deque(maxlen=2)
+q_canon_ready      = deque(maxlen=1)
 
 viewer_a120mm_deployed = False
 viewer_a120mc_deployed = False
 viewer_canon_deployed = False
 viewer_a183mm_deployed = False
+viewer_a533mc_deployed = False
 viewer_a462mc_deployed = False
 run_plate_solve_a120mm = False
 run_plate_solve_a120mc = False
 run_plate_solve_canon = False
 run_plate_solve_a183mm = False
+run_plate_solve_a533mc = False
 run_plate_solve_a462mc = False
 plate_solve_canon_status = 'NULL'
 plate_solve_a120mm_status = 'NULL'
 plate_solve_a120mc_status = 'NULL'
 plate_solve_a183mm_status = 'NULL'
+plate_solve_a533mc_status = 'NULL'
 plate_solve_a462mc_status = 'NULL'
 plate_solve_results = {}
 canon_last_frame = False
@@ -79,6 +89,8 @@ cam_settings = {
   'a462mc': {
   },
   'a183mm': {
+  },
+  'a533mc': {
   },
   'a120mc': {
   },
@@ -140,32 +152,12 @@ def f_run_periodic_functions():
 
   while kill_thread == False:
     try:
-      screen.f_a183mm_plate_solve_status_refresh()
-    except Exception as e:
-      print(traceback.format_exc())
-      pass
-    try:
-      screen.f_a462mc_plate_solve_status_refresh()
-    except Exception as e:
-      print(traceback.format_exc())
-      pass
-    try:
-      screen.f_a120mc_plate_solve_status_refresh()
-    except Exception as e:
-      print(traceback.format_exc())
-      pass
-    try:
-      screen.f_a120mm_plate_solve_status_refresh()
-    except Exception as e:
-      print(traceback.format_exc())
-      pass
-    try:
-      screen.f_canon_plate_solve_status_refresh()
-    except Exception as e:
-      print(traceback.format_exc())
-      pass
-    try:
       screen.print_telescope_position()
+    except Exception as e:
+      print(traceback.format_exc())
+      pass
+    try:
+      screen.f_a533mc_cam_update_values(load_slider=False)
     except Exception as e:
       print(traceback.format_exc())
       pass
@@ -202,18 +194,20 @@ def f_run_periodic_functions():
     time.sleep(1)
 
 def f_photo_refresh():
-  global kill_thread, screen, q_a120mm_raw, q_a120mc_raw, q_a462mc_raw, viewer_a120mm_deployed, viewer_a462mc_deployed, viewer_a120mc_deployed, q_a183mm_raw, viewer_a183mm_deployed
+  global kill_thread, screen, q_a120mm_raw, q_a120mc_raw, q_a462mc_raw, viewer_a120mm_deployed, viewer_a462mc_deployed, viewer_a120mc_deployed, q_a183mm_raw, viewer_a183mm_deployed, q_a533mc_raw, viewer_a533mc_deployed
 
   while kill_thread == False:
     try:
-      if viewer_canon_deployed and screen.t_prawy.currentIndex() == 4:
+      if viewer_canon_deployed and screen.t_prawy.currentIndex() == 5:
         screen.f_canon_window_refresh_event()
-      if viewer_a120mc_deployed and screen.t_prawy.currentIndex() == 3:
+      if viewer_a120mc_deployed and screen.t_prawy.currentIndex() == 4:
         screen.f_a120mc_window_refresh_event()
-      if viewer_a120mm_deployed and screen.t_prawy.currentIndex() == 2:
+      if viewer_a120mm_deployed and screen.t_prawy.currentIndex() == 3:
         screen.f_a120mm_window_refresh_event()
-      if viewer_a462mc_deployed and screen.t_prawy.currentIndex() == 1:
+      if viewer_a462mc_deployed and screen.t_prawy.currentIndex() == 2:
         screen.f_a462mc_window_refresh_event()
+      if viewer_a533mc_deployed and screen.t_prawy.currentIndex() == 1:
+        screen.f_a533mc_window_refresh_event()
       if viewer_a183mm_deployed and screen.t_prawy.currentIndex() == 0:
         screen.f_a183mm_window_refresh_event()
     except Exception as e:
@@ -225,632 +219,274 @@ def f_photo_refresh():
 
 #############################################################################################
 
-def f_save_a183mm_img():
-  global q_a183mm_save_to_file
+def f_save_img_universal(queue):
+  global kill_thread
 
   while not kill_thread:
-    while not q_a183mm_save_to_file and not kill_thread:
+    while not queue and not kill_thread:
       time.sleep(0.1)
     if kill_thread:
       break
-    frame = q_a183mm_save_to_file.pop()
-    imgdir = os.path.expanduser('~') + '/' + 'zzz_a183mm_autosave_' + frame['dirname']
+
+    frame = queue.pop()
+
+    imgdir = os.path.expanduser('~') + '/' + 'zzz_' + str(frame['camname']) + '_autosave_' + frame['dirname']
     if os.path.exists(imgdir) and not os.path.isdir(imgdir):
-      print("ERR: " + imgdir + " exists. Can't save there")
+      print("ERR: " + imgdir + " exists and is not a dir. Can't save there")
       continue
 
     if not os.path.exists(imgdir):
       os.mkdir(imgdir)
 
-    filename = imgdir + '/raw_' + str(time.time()) + '.png'
-    cv2.imwrite(filename, frame['frame16'][:, :, 1])
+    filename = imgdir +\
+    '/raw_' + str(frame['time']) +\
+    '.exp_' + str(frame['exposure']) +\
+    '.off_' + str(frame['offset']) +\
+    '.gain_' + str(frame['gain']) +\
+    '.bin_' + str(frame['bin']) +\
+    '.t_' + str(int(frame['temperature']*10)) +\
+    '.color_' + str(frame['iscolor']) +\
+    '.png'
+
+    if frame['iscolor']:
+      cv2.imwrite(filename, frame['frame16'])
+    else:
+      cv2.imwrite(filename, frame['frame16'][:, :, 1])
+
+def f_save_a183mm_img():
+  global q_a183mm_save_to_file
+  f_save_img_universal(queue=q_a183mm_save_to_file)
+
+def f_save_a533mc_img():
+  global q_a533mc_save_to_file
+  f_save_img_universal(queue=q_a533mc_save_to_file)
 
 def f_save_a462mc_img():
   global q_a462mc_save_to_file
-
-  while not kill_thread:
-    while not q_a462mc_save_to_file and not kill_thread:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    frame = q_a462mc_save_to_file.pop()
-    imgdir = os.path.expanduser('~') + '/' + 'zzz_a462mc_autosave_' + frame['dirname']
-    if os.path.exists(imgdir) and not os.path.isdir(imgdir):
-      print("ERR: " + imgdir + " exists. Can't save there")
-      continue
-
-    if not os.path.exists(imgdir):
-      os.mkdir(imgdir)
-
-    filename = imgdir + '/raw_' + str(time.time()) + '.png'
-    cv2.imwrite(filename, frame['frame16'])
-
+  f_save_img_universal(queue=q_a462mc_save_to_file)
 
 def f_save_a120mm_img():
   global q_a120mm_save_to_file
-
-  while not kill_thread:
-    while not q_a120mm_save_to_file and not kill_thread:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    frame = q_a120mm_save_to_file.pop()
-    imgdir = os.path.expanduser('~') + '/' 'zzz_a120mm_autosave' + frame['dirname']
-    if os.path.exists(imgdir) and not os.path.isdir(imgdir):
-      print("ERR: " + imgdir + " exists. Can't save there")
-      continue
-
-    if not os.path.exists(imgdir):
-      os.mkdir(imgdir)
-
-    filename = imgdir + '/raw_' + str(time.time()) + '.png'
-    cv2.imwrite(filename, frame['frame16'])
+  f_save_img_universal(queue=q_a120mm_save_to_file)
 
 def f_save_a120mc_img():
   global q_a120mc_save_to_file
-
-  while not kill_thread:
-    while not q_a120mc_save_to_file and not kill_thread:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    frame = q_a120mc_save_to_file.pop()
-    imgdir = os.path.expanduser('~') + '/' + 'zzz_a120mc_autosave' + frame['dirname']
-    if os.path.exists(imgdir) and not os.path.isdir(imgdir):
-      print("ERR: " + imgdir + " exists. Can't save there")
-      continue
-
-    if not os.path.exists(imgdir):
-      os.mkdir(imgdir)
-
-    filename = imgdir + '/raw_' + str(time.time()) + '.png'
-    cv2.imwrite(filename, frame['frame16'])
+  f_save_img_universal(queue=q_a120mc_save_to_file)
 
 
 #############################################################################################
+def f_universal_plate_solve_run(q_platesolve, camname, lab_plate_solve_status, radius, cam_scale_pixel_scale, grid):
+  global t_telescope, plate_solve_results, kill_thread, screen, req_cmd
+
+  lab_plate_solve_status.setText('Plate solve status: WAITING FOR FRAME...')
+  while not q_platesolve and not kill_thread:
+    time.sleep(0.1)
+
+  frame = q_platesolve.pop()
+  out = subprocess.check_output(['rm', '-rf', '/dev/shm/' + camname + '_platesolve'])
+  out = subprocess.check_output(['mkdir', '-p', '/dev/shm/' + camname + '_platesolve'])
+  cv2.imwrite('/dev/shm/' + camname + '_platesolve/frame.png', frame['gray'])
+
+  platesolve_cmd_1 = [
+    'solve-field',
+    '--scale-units',
+    'arcsecperpix',
+    '--scale-low',
+    str(cam_scale_pixel_scale.value()*0.8),
+    '--scale-high',
+    str(cam_scale_pixel_scale.value()*1.2),
+    '--no-plots',
+    '--downsample',
+    '2',
+  ]
+  platesolve_cmd_2 = [
+    '--ra',
+    Angle(t_telescope['ra']).to_string(sep=':', precision=0),
+    '--dec',
+    Angle(t_telescope['dec']).to_string(sep=':', precision=0),
+    '--radius',
+    '2',
+  ]
+  platesolve_cmd_3 = [
+    '--temp-dir',
+    '/dev/shm/' + camname + '_platesolve',
+    '/dev/shm/' + camname + '_platesolve/frame.png'
+  ]
+
+  if radius:
+    platesolve_cmd = platesolve_cmd_1 + platesolve_cmd_2 + platesolve_cmd_3
+  else:
+    platesolve_cmd = platesolve_cmd_1 + platesolve_cmd_3
+
+  try:
+    lab_plate_solve_status.setText('Plate solve status: SOLVING...')
+    out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
+    out = subprocess.check_output(['wcsinfo', '/dev/shm/' + camname + '_platesolve/frame.wcs'])
+    opts = {}
+    for i in out.decode().split('\n'):
+      if i != '':
+        key, val = i.split(' ')
+        opts[key] = val
+
+    if opts['dec_center_sign'] == '-1':
+      signum = '-'
+    else:
+      signum = ''
+
+    _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
+    _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
+    payload = {
+      'mode': 'radec',
+      'ra': _ra,
+      'dec': _dec,
+      'move': False,
+      'update_pos': True
+    }
+    req_cmd.put(payload)
+
+    imagew = int(opts['imagew']) - 1
+    imageh = int(opts['imageh']) - 1
+    wcsfile = fits.open('/dev/shm/' + camname + '_platesolve/frame.wcs')
+    w = wcs.WCS(wcsfile[0].header)
+    corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
+    world = w.wcs_pix2world(corners, 0)
+    poly = ','.join(map(str, world.flatten()))
+
+    map_url_tab = [
+      'http://legacysurvey.org/viewer/?ra=',
+      opts['ra_center'],
+      '&dec=',
+      opts['dec_center'],
+      '&layer=unwise-neo6&poly=',
+      poly,
+    ]
+    plate_solve_results['url'] = ''.join(map_url_tab)
+
+    plotann_arr = [
+      'plotann.py',
+      '/dev/shm/' + camname + '_platesolve/frame.wcs',
+      '/dev/shm/' + camname + '_platesolve/frame.png',
+      '/dev/shm/' + camname + '_platesolve/frame_hdcat.png',
+      '--hdcat=/home/dom/GIT/puppet/astro/astro_gui/hd.fits',
+      '--grid-size=' + str(grid),
+      '--grid-label=' + str(grid),
+    ]
+    out = subprocess.check_output(plotann_arr)
+    plate_solve_results['hdcat'] = cv2.imread('/dev/shm/' + camname + '_platesolve/frame_hdcat.png')
+
+    plotann_arr = [
+      'plotann.py',
+      '/dev/shm/' + camname + '_platesolve/frame.wcs',
+      '/dev/shm/' + camname + '_platesolve/frame.png',
+      '/dev/shm/' + camname + '_platesolve/frame_tycho2cat.png',
+      '--tycho2cat=/home/dom/GIT/puppet/astro/astro_gui/tycho2.kd',
+      '--grid-size=' + str(grid),
+      '--grid-label=' + str(grid),
+    ]
+    out = subprocess.check_output(plotann_arr)
+    plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/' + camname + '_platesolve/frame_tycho2cat.png')
+    lab_plate_solve_status.setText('Plate solve status: DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    screen.f_solved_tabs_refresh_event()
+  except:
+    lab_plate_solve_status.setText('Plate solve status: FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    pass
+#############################################################################################
 
 def f_a183mm_plate_solve_loop():
-  global q_a183mm_platesolve, kill_thread, run_plate_solve_a183mm, plate_solve_a183mm_status, plate_solve_results
-  global screen, t_telescope
+  global screen, kill_thread, run_plate_solve_a183mm
 
   while not kill_thread:
+    time.sleep(0.5)
     if run_plate_solve_a183mm:
-      plate_solve_a183mm_status = 'WAITING FOR FRAME...'
-      while not q_a183mm_platesolve and not kill_thread:
-        time.sleep(0.1)
-
       run_plate_solve_a183mm = False
-      frame = q_a183mm_platesolve.pop()
-      out = subprocess.check_output(['rm', '-rf', '/dev/shm/a183mm_platesolve'])
-      out = subprocess.check_output(['mkdir', '-p', '/dev/shm/a183mm_platesolve'])
-      cv2.imwrite('/dev/shm/a183mm_platesolve/frame.png', frame['gray'])
+      f_universal_plate_solve_run(
+        camname = 'a183mm',
+        radius = True,
+        q_platesolve = q_a183mm_platesolve,
+        lab_plate_solve_status = screen.lab_a183mm_plate_solve_status,
+        cam_scale_pixel_scale = screen.a183mm_cam_scale_pixel_scale,
+        grid = '0.02',
+      )
 
-      platesolve_cmd = [
-        'solve-field',
-        '--scale-units',
-        'arcsecperpix',
-        '--scale-low',
-        str(screen.a183mm_cam_scale_pixel_scale.value() - 0.01),
-        '--scale-high',
-        str(screen.a183mm_cam_scale_pixel_scale.value() + 0.01),
-        '--no-plots',
-        '--downsample',
-        '2',
-        '--ra',
-        Angle(t_telescope['ra']).to_string(sep=':', precision=0),
-        '--dec',
-        Angle(t_telescope['dec']).to_string(sep=':', precision=0),
-        '--radius',
-        '2',
-        '--temp-dir',
-        '/dev/shm/a183mm_platesolve',
-        '/dev/shm/a183mm_platesolve/frame.png'
-      ]
-      try:
-        plate_solve_a183mm_status = 'SOLVING...'
-        out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
-        out = subprocess.check_output(['wcsinfo', '/dev/shm/a183mm_platesolve/frame.wcs'])
-        opts = {}
-        for i in out.decode().split('\n'):
-          if i != '':
-            key, val = i.split(' ')
-            opts[key] = val
+def f_a533mc_plate_solve_loop():
+  global screen, kill_thread, run_plate_solve_a533mc
 
-        if opts['dec_center_sign'] == '-1':
-          signum = '-'
-        else:
-          signum = ''
-
-        _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
-        _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
-        payload = {
-          'mode': 'radec',
-          'ra': _ra,
-          'dec': _dec,
-          'move': False,
-          'update_pos': True
-        }
-        req_cmd.put(payload)
-
-        imagew = int(opts['imagew']) - 1
-        imageh = int(opts['imageh']) - 1
-        wcsfile = fits.open('/dev/shm/a183mm_platesolve/frame.wcs')
-        w = wcs.WCS(wcsfile[0].header)
-        corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
-        world = w.wcs_pix2world(corners, 0)
-        poly = ','.join(map(str, world.flatten()))
-
-        map_url_tab = [
-          'http://legacysurvey.org/viewer/?ra=',
-          opts['ra_center'],
-          '&dec=',
-          opts['dec_center'],
-          '&layer=unwise-neo6&poly=',
-          poly,
-        ]
-        plate_solve_results['url'] = ''.join(map_url_tab)
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a183mm_platesolve/frame.wcs',
-          '/dev/shm/a183mm_platesolve/frame.png',
-          '/dev/shm/a183mm_platesolve/frame_hdcat.png',
-          '--hdcat=/home/dom/GIT/puppet/astro_gui/hd.fits',
-          '--grid-size=0.01',
-          '--grid-label=0.01',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['hdcat'] = cv2.imread('/dev/shm/a183mm_platesolve/frame_hdcat.png')
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a183mm_platesolve/frame.wcs',
-          '/dev/shm/a183mm_platesolve/frame.png',
-          '/dev/shm/a183mm_platesolve/frame_tycho2cat.png',
-          '--tycho2cat=/home/dom/GIT/puppet/astro_gui/tycho2.kd',
-          '--grid-size=0.01',
-          '--grid-label=0.01',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/a183mm_platesolve/frame_tycho2cat.png')
-        plate_solve_a183mm_status = 'DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        screen.f_solved_tabs_refresh_event()
-      except:
-        plate_solve_a183mm_status = 'FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        pass
-    else:
-      time.sleep(0.5)
+  while not kill_thread:
+    time.sleep(0.5)
+    if run_plate_solve_a533mc:
+      run_plate_solve_a533mc = False
+      f_universal_plate_solve_run(
+        camname = 'a533mc',
+        radius = True,
+        q_platesolve = q_a533mc_platesolve,
+        lab_plate_solve_status = screen.lab_a533mc_plate_solve_status,
+        cam_scale_pixel_scale = screen.a533mc_cam_scale_pixel_scale,
+        grid = '0.02',
+      )
 
 def f_a462mc_plate_solve_loop():
-  global q_a462mc_platesolve, kill_thread, run_plate_solve_a462mc, plate_solve_a462mc_status, plate_solve_results
-  global screen, t_telescope
+  global screen, kill_thread, run_plate_solve_a462mc
 
   while not kill_thread:
+    time.sleep(0.5)
     if run_plate_solve_a462mc:
-      plate_solve_a462mc_status = 'WAITING FOR FRAME...'
-      while not q_a462mc_platesolve and not kill_thread:
-        time.sleep(0.1)
-
       run_plate_solve_a462mc = False
-      frame = q_a462mc_platesolve.pop()
-      out = subprocess.check_output(['rm', '-rf', '/dev/shm/a462mc_platesolve'])
-      out = subprocess.check_output(['mkdir', '-p', '/dev/shm/a462mc_platesolve'])
-      cv2.imwrite('/dev/shm/a462mc_platesolve/frame.png', frame['gray'])
-
-      platesolve_cmd = [
-        'solve-field',
-        '--scale-units',
-        'arcsecperpix',
-        '--scale-low',
-        str(screen.a462mc_cam_scale_pixel_scale.value() - 0.01),
-        '--scale-high',
-        str(screen.a462mc_cam_scale_pixel_scale.value() + 0.01),
-        '--no-plots',
-        '--downsample',
-        '2',
-        '--ra',
-        Angle(t_telescope['ra']).to_string(sep=':', precision=0),
-        '--dec',
-        Angle(t_telescope['dec']).to_string(sep=':', precision=0),
-        '--radius',
-        '2',
-        '--temp-dir',
-        '/dev/shm/a462mc_platesolve',
-        '/dev/shm/a462mc_platesolve/frame.png'
-      ]
-      try:
-        plate_solve_a462mc_status = 'SOLVING...'
-        out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
-        out = subprocess.check_output(['wcsinfo', '/dev/shm/a462mc_platesolve/frame.wcs'])
-        opts = {}
-        for i in out.decode().split('\n'):
-          if i != '':
-            key, val = i.split(' ')
-            opts[key] = val
-
-        if opts['dec_center_sign'] == '-1':
-          signum = '-'
-        else:
-          signum = ''
-
-        _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
-        _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
-        payload = {
-          'mode': 'radec',
-          'ra': _ra,
-          'dec': _dec,
-          'move': False,
-          'update_pos': True
-        }
-        req_cmd.put(payload)
-
-        imagew = int(opts['imagew']) - 1
-        imageh = int(opts['imageh']) - 1
-        wcsfile = fits.open('/dev/shm/a462mc_platesolve/frame.wcs')
-        w = wcs.WCS(wcsfile[0].header)
-        corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
-        world = w.wcs_pix2world(corners, 0)
-        poly = ','.join(map(str, world.flatten()))
-
-        map_url_tab = [
-          'http://legacysurvey.org/viewer/?ra=',
-          opts['ra_center'],
-          '&dec=',
-          opts['dec_center'],
-          '&layer=unwise-neo6&poly=',
-          poly,
-        ]
-        plate_solve_results['url'] = ''.join(map_url_tab)
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a462mc_platesolve/frame.wcs',
-          '/dev/shm/a462mc_platesolve/frame.png',
-          '/dev/shm/a462mc_platesolve/frame_hdcat.png',
-          '--hdcat=/home/dom/GIT/puppet/astro_gui/hd.fits',
-          '--grid-size=0.01',
-          '--grid-label=0.01',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['hdcat'] = cv2.imread('/dev/shm/a462mc_platesolve/frame_hdcat.png')
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a462mc_platesolve/frame.wcs',
-          '/dev/shm/a462mc_platesolve/frame.png',
-          '/dev/shm/a462mc_platesolve/frame_tycho2cat.png',
-          '--tycho2cat=/home/dom/GIT/puppet/astro_gui/tycho2.kd',
-          '--grid-size=0.01',
-          '--grid-label=0.01',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/a462mc_platesolve/frame_tycho2cat.png')
-        plate_solve_a462mc_status = 'DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        screen.f_solved_tabs_refresh_event()
-      except:
-        plate_solve_a462mc_status = 'FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        pass
-    else:
-      time.sleep(0.5)
-
+      f_universal_plate_solve_run(
+        camname = 'a462mc',
+        radius = True,
+        q_platesolve = q_a462mc_platesolve,
+        lab_plate_solve_status = screen.lab_a462mc_plate_solve_status,
+        cam_scale_pixel_scale = screen.a462mc_cam_scale_pixel_scale,
+        grid = '0.02',
+      )
 
 def f_a120mc_plate_solve_loop():
-  global q_a120mc_platesolve, kill_thread, run_plate_solve_a120mc, plate_solve_a120mc_status, plate_solve_results
-  global screen
+  global screen, kill_thread, run_plate_solve_a120mc
 
   while not kill_thread:
+    time.sleep(0.5)
     if run_plate_solve_a120mc:
-      plate_solve_a120mc_status = 'WAITING FOR FRAME...'
-      while not q_a120mc_platesolve and not kill_thread:
-        time.sleep(0.1)
-
       run_plate_solve_a120mc = False
-      frame = q_a120mc_platesolve.pop()
-      out = subprocess.check_output(['rm', '-rf', '/dev/shm/a120mc_platesolve'])
-      out = subprocess.check_output(['mkdir', '-p', '/dev/shm/a120mc_platesolve'])
-      cv2.imwrite('/dev/shm/a120mc_platesolve/frame.png', frame['gray'])
-      platesolve_cmd = [
-        'solve-field',
-        '--scale-units',
-        'arcsecperpix',
-        '--scale-low',
-        str(screen.a120mc_cam_scale_pixel_scale.value() - screen.a120mc_cam_scale_pixel_scale.value()*0.2),
-        '--scale-high',
-        str(screen.a120mc_cam_scale_pixel_scale.value() + screen.a120mc_cam_scale_pixel_scale.value()*0.2),
-        '--no-plots',
-        '--downsample',
-        '2',
-        '--cpulimit',
-        '5',
-        '--temp-dir',
-        '/dev/shm/a120mc_platesolve',
-        '/dev/shm/a120mc_platesolve/frame.png'
-      ]
-      try:
-        plate_solve_a120mc_status = 'SOLVING...'
-        out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
-        out = subprocess.check_output(['wcsinfo', '/dev/shm/a120mc_platesolve/frame.wcs'])
-        opts = {}
-        for i in out.decode().split('\n'):
-          if i != '':
-            key, val = i.split(' ')
-            opts[key] = val
-
-        if opts['dec_center_sign'] == '-1':
-          signum = '-'
-        else:
-          signum = ''
-
-        _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
-        _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
-        payload = {
-          'mode': 'radec',
-          'ra': _ra,
-          'dec': _dec,
-          'move': False,
-          'update_pos': True
-        }
-        req_cmd.put(payload)
-
-        imagew = int(opts['imagew']) - 1
-        imageh = int(opts['imageh']) - 1
-        wcsfile = fits.open('/dev/shm/a120mc_platesolve/frame.wcs')
-        w = wcs.WCS(wcsfile[0].header)
-        corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
-        world = w.wcs_pix2world(corners, 0)
-        poly = ','.join(map(str, world.flatten()))
-
-        map_url_tab = [
-          'http://legacysurvey.org/viewer/?ra=',
-          opts['ra_center'],
-          '&dec=',
-          opts['dec_center'],
-          '&layer=unwise-neo6&poly=',
-          poly,
-        ]
-        plate_solve_results['url'] = ''.join(map_url_tab)
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a120mc_platesolve/frame.wcs',
-          '/dev/shm/a120mc_platesolve/frame.png',
-          '/dev/shm/a120mc_platesolve/frame_hdcat.png',
-          '--hdcat=/home/dom/GIT/puppet/astro_gui/hd.fits',
-          '--grid-size=0.1',
-          '--grid-label=0.1',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['hdcat'] = cv2.imread('/dev/shm/a120mc_platesolve/frame_hdcat.png')
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a120mc_platesolve/frame.wcs',
-          '/dev/shm/a120mc_platesolve/frame.png',
-          '/dev/shm/a120mc_platesolve/frame_tycho2cat.png',
-          '--tycho2cat=/home/dom/GIT/puppet/astro_gui/tycho2.kd',
-          '--grid-size=0.1',
-          '--grid-label=0.1',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/a120mc_platesolve/frame_tycho2cat.png')
-        plate_solve_a120mc_status = 'DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        screen.f_solved_tabs_refresh_event()
-      except:
-        plate_solve_a120mc_status = 'FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        pass
-    else:
-      time.sleep(0.5)
-
+      f_universal_plate_solve_run(
+        camname = 'a120mc',
+        radius = False,
+        q_platesolve = q_a120mc_platesolve,
+        lab_plate_solve_status = screen.lab_a120mc_plate_solve_status,
+        cam_scale_pixel_scale = screen.a120mc_cam_scale_pixel_scale,
+        grid = '0.1',
+      )
 
 def f_a120mm_plate_solve_loop():
-  global q_a120mm_platesolve, kill_thread, run_plate_solve_a120mm, plate_solve_a120mm_status, plate_solve_results
-  global screen
+
+  global screen, kill_thread, run_plate_solve_a120mm
 
   while not kill_thread:
+    time.sleep(0.5)
     if run_plate_solve_a120mm:
-      plate_solve_a120mm_status = 'WAITING FOR FRAME...'
-      while not q_a120mm_platesolve and not kill_thread:
-        time.sleep(0.1)
-
       run_plate_solve_a120mm = False
-      frame = q_a120mm_platesolve.pop()
-      out = subprocess.check_output(['rm', '-rf', '/dev/shm/a120mm_platesolve'])
-      out = subprocess.check_output(['mkdir', '-p', '/dev/shm/a120mm_platesolve'])
-      cv2.imwrite('/dev/shm/a120mm_platesolve/frame.png', frame['gray'])
-      platesolve_cmd = [
-        'solve-field',
-        '--scale-units',
-        'arcsecperpix',
-        '--scale-low',
-        str(screen.a120mm_cam_scale_pixel_scale.value() - screen.a120mm_cam_scale_pixel_scale.value()*0.2),
-        '--scale-high',
-        str(screen.a120mm_cam_scale_pixel_scale.value() + screen.a120mm_cam_scale_pixel_scale.value()*0.2),
-        '--no-plots',
-        '--downsample',
-        '2',
-        '--cpulimit',
-        '5',
-        '--temp-dir',
-        '/dev/shm/a120mm_platesolve',
-        '/dev/shm/a120mm_platesolve/frame.png'
-      ]
-      try:
-        plate_solve_a120mm_status = 'SOLVING...'
-        out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
-        out = subprocess.check_output(['wcsinfo', '/dev/shm/a120mm_platesolve/frame.wcs'])
-        opts = {}
-        for i in out.decode().split('\n'):
-          if i != '':
-            key, val = i.split(' ')
-            opts[key] = val
-
-        if opts['dec_center_sign'] == '-1':
-          signum = '-'
-        else:
-          signum = ''
-
-        _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
-        _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
-        payload = {
-          'mode': 'radec',
-          'ra': _ra,
-          'dec': _dec,
-          'move': False,
-          'update_pos': True
-        }
-        req_cmd.put(payload)
-
-        imagew = int(opts['imagew']) - 1
-        imageh = int(opts['imageh']) - 1
-        wcsfile = fits.open('/dev/shm/a120mm_platesolve/frame.wcs')
-        w = wcs.WCS(wcsfile[0].header)
-        corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
-        world = w.wcs_pix2world(corners, 0)
-        poly = ','.join(map(str, world.flatten()))
-
-        map_url_tab = [
-          'http://legacysurvey.org/viewer/?ra=',
-          opts['ra_center'],
-          '&dec=',
-          opts['dec_center'],
-          '&layer=unwise-neo6&poly=',
-          poly,
-        ]
-        plate_solve_results['url'] = ''.join(map_url_tab)
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a120mm_platesolve/frame.wcs',
-          '/dev/shm/a120mm_platesolve/frame.png',
-          '/dev/shm/a120mm_platesolve/frame_hdcat.png',
-          '--hdcat=/home/dom/GIT/puppet/astro_gui/hd.fits',
-          '--grid-size=0.05',
-          '--grid-label=0.05',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['hdcat'] = cv2.imread('/dev/shm/a120mm_platesolve/frame_hdcat.png')
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/a120mm_platesolve/frame.wcs',
-          '/dev/shm/a120mm_platesolve/frame.png',
-          '/dev/shm/a120mm_platesolve/frame_tycho2cat.png',
-          '--tycho2cat=/home/dom/GIT/puppet/astro_gui/tycho2.kd',
-          '--grid-size=0.05',
-          '--grid-label=0.05',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/a120mm_platesolve/frame_tycho2cat.png')
-        plate_solve_a120mm_status = 'DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        screen.f_solved_tabs_refresh_event()
-      except:
-        plate_solve_a120mm_status = 'FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        pass
-    else:
-      time.sleep(0.5)
+      f_universal_plate_solve_run(
+        camname = 'a120mm',
+        radius = False,
+        q_platesolve = q_a120mm_platesolve,
+        lab_plate_solve_status = screen.lab_a120mm_plate_solve_status,
+        cam_scale_pixel_scale = screen.a120mm_cam_scale_pixel_scale,
+        grid = '0.1',
+      )
 
 def f_canon_plate_solve_loop():
-  global q_canon_platesolve, kill_thread, run_plate_solve_canon, plate_solve_canon_status, plate_solve_results
-  global screen
+  global screen, kill_thread, run_plate_solve_canon
 
   while not kill_thread:
+    time.sleep(0.5)
     if run_plate_solve_canon:
-      plate_solve_canon_status = 'WAITING FOR FRAME...'
-      while not q_canon_platesolve and not kill_thread:
-        time.sleep(0.1)
-
       run_plate_solve_canon = False
-      frame = q_canon_platesolve.pop()
-      out = subprocess.check_output(['rm', '-rf', '/dev/shm/canon_platesolve'])
-      out = subprocess.check_output(['mkdir', '-p', '/dev/shm/canon_platesolve'])
-      cv2.imwrite('/dev/shm/canon_platesolve/frame.png', frame['gray'])
-      platesolve_cmd = [
-        'solve-field',
-        '--scale-units',
-        'arcsecperpix',
-        '--scale-low',
-        str(screen.canon_scale_pixel_scale.value() - screen.canon_scale_pixel_scale.value()*0.2),
-        '--scale-high',
-        str(screen.canon_scale_pixel_scale.value() + screen.canon_scale_pixel_scale.value()*0.2),
-        '--no-plots',
-        '--downsample',
-        '4',
-        '--cpulimit',
-        '10',
-        '--temp-dir',
-        '/dev/shm/canon_platesolve',
-        '/dev/shm/canon_platesolve/frame.png'
-      ]
-      try:
-        plate_solve_canon_status = 'SOLVING...'
-        out = subprocess.check_output(platesolve_cmd, stderr=subprocess.STDOUT)
-        out = subprocess.check_output(['wcsinfo', '/dev/shm/canon_platesolve/frame.wcs'])
-        opts = {}
-        for i in out.decode().split('\n'):
-          if i != '':
-            key, val = i.split(' ')
-            opts[key] = val
-
-        if opts['dec_center_sign'] == '-1':
-          signum = '-'
-        else:
-          signum = ''
-
-        _ra = opts['ra_center_h'] + 'h' + opts['ra_center_m'] + 'm' + opts['ra_center_s'] + 's'
-        _dec = signum + opts['dec_center_d'] + 'd' + opts['dec_center_m'] + 'm' + opts['dec_center_s'] + 's'
-        payload = {
-          'mode': 'radec',
-          'ra': _ra,
-          'dec': _dec,
-          'move': False,
-          'update_pos': True
-        }
-        req_cmd.put(payload)
-
-        imagew = int(opts['imagew']) - 1
-        imageh = int(opts['imageh']) - 1
-        wcsfile = fits.open('/dev/shm/canon_platesolve/frame.wcs')
-        w = wcs.WCS(wcsfile[0].header)
-        corners = np.array([[0, 0], [imagew,0], [imagew,imageh], [0, imageh], [0, 0]], dtype=np.float32)
-        world = w.wcs_pix2world(corners, 0)
-        poly = ','.join(map(str, world.flatten()))
-
-        map_url_tab = [
-          'http://legacysurvey.org/viewer/?ra=',
-          opts['ra_center'],
-          '&dec=',
-          opts['dec_center'],
-          '&layer=unwise-neo6&poly=',
-          poly,
-        ]
-        plate_solve_results['url'] = ''.join(map_url_tab)
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/canon_platesolve/frame.wcs',
-          '/dev/shm/canon_platesolve/frame.png',
-          '/dev/shm/canon_platesolve/frame_hdcat.png',
-          '--hdcat=/home/dom/GIT/puppet/astro_gui/hd.fits',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['hdcat'] = cv2.imread('/dev/shm/canon_platesolve/frame_hdcat.png')
-
-        plotann_arr = [
-          'plotann.py',
-          '/dev/shm/canon_platesolve/frame.wcs',
-          '/dev/shm/canon_platesolve/frame.png',
-          '/dev/shm/canon_platesolve/frame_tycho2cat.png',
-          '--tycho2cat=/home/dom/GIT/puppet/astro_gui/tycho2.kd',
-        ]
-        out = subprocess.check_output(plotann_arr)
-        plate_solve_results['tycho2cat'] = cv2.imread('/dev/shm/canon_platesolve/frame_tycho2cat.png')
-        plate_solve_canon_status = 'DONE at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        screen.f_solved_tabs_refresh_event()
-      except:
-        plate_solve_canon_status = 'FAILED at ' + str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        pass
-    else:
-      time.sleep(0.5)
+      f_universal_plate_solve_run(
+        camname = 'canon',
+        radius = True,
+        q_platesolve = q_canon_platesolve,
+        lab_plate_solve_status = screen.lab_canon_plate_solve_status,
+        cam_scale_pixel_scale = screen.canon_scale_pixel_scale,
+      )
 
 #############################################################################################
 
@@ -860,6 +496,8 @@ def f_camera_params(cam_name, method):
   if method == 'initial':
     if cam_name == 'a183mm':
       uri = 'http://127.0.0.2:8003/settings'
+    elif cam_name == 'a533mc':
+      uri = 'http://127.0.0.2:8004/settings'
     elif cam_name == 'a462mc':
       uri = 'http://127.0.0.2:8000/settings'
     elif cam_name == 'a120mm':
@@ -886,6 +524,8 @@ def f_camera_params(cam_name, method):
 
     if cam_name == 'a183mm':
       screen.f_a183mm_cam_update_values(load_slider=True)
+    elif cam_name == 'a533mc':
+      screen.f_a533mc_cam_update_values(load_slider=True)
     elif cam_name == 'a462mc':
       screen.f_a462mc_cam_update_values(load_slider=True)
     elif cam_name == 'a120mm':
@@ -896,6 +536,8 @@ def f_camera_params(cam_name, method):
   elif method == 'send_params_to_cam':
     if cam_name == 'a183mm':
       uri = 'http://127.0.0.2:8003/set_settings'
+    elif cam_name == 'a533mc':
+      uri = 'http://127.0.0.2:8004/set_settings'
     elif cam_name == 'a462mc':
       uri = 'http://127.0.0.2:8000/set_settings'
     elif cam_name == 'a120mm':
@@ -921,6 +563,8 @@ def f_camera_params(cam_name, method):
   elif method == 'refresh_deployed':
     if cam_name == 'a183mm':
       uri = 'http://127.0.0.2:8003/settings'
+    elif cam_name == 'a533mc':
+      uri = 'http://127.0.0.2:8004/settings'
     elif cam_name == 'a462mc':
       uri = 'http://127.0.0.2:8000/settings'
     elif cam_name == 'a120mm':
@@ -960,6 +604,12 @@ def f_camera_params(cam_name, method):
       if 'cooler_pwr' in cam_settings['a183mm']['info']:
         cam_settings['a183mm']['info']['cooler_pwr'] = response['info']['cooler_pwr']
 
+    if cam_name == 'a533mc':
+      if 'temperature' in cam_settings['a533mc']['info']:
+        cam_settings['a533mc']['info']['temperature'] = response['info']['temperature']
+      if 'cooler_pwr' in cam_settings['a533mc']['info']:
+        cam_settings['a533mc']['info']['cooler_pwr'] = response['info']['cooler_pwr']
+
     if 'depl_error' in cam_settings[cam_name] and depl_err_local > 0:
       cam_settings[cam_name]['depl_error'] = cam_settings[cam_name]['depl_error'] + 1
     else:
@@ -970,7 +620,6 @@ def f_camera_params(cam_name, method):
 
 
 #############################################################################################
-
 
 def f_a183mm_settings():
   global cam_a183mm, cam_settings, kill_thread
@@ -1000,6 +649,34 @@ def f_a183mm_settings():
         last_settings_time = cam_settings['a183mm']['param_time']
     time.sleep(1)
 
+def f_a533mc_settings():
+  global cam_a533mc, cam_settings, kill_thread
+
+  while kill_thread == False:
+    try:
+      out = requests.get('http://127.0.0.2:8004/settings', timeout=1)
+      if out.status_code == 200:
+        break
+      else:
+        time.sleep(1)
+    except:
+      time.sleep(1)
+      pass
+
+  f_camera_params(cam_name = 'a533mc', method = 'initial')
+  if 'param_time' in cam_settings['a533mc']:
+    last_settings_time = cam_settings['a533mc']['param_time']
+  else:
+    last_settings_time = 'NULL'
+
+  while kill_thread == False:
+    f_camera_params(cam_name = 'a533mc', method = 'refresh_deployed')
+    if 'param_time' in cam_settings['a533mc']:
+      if last_settings_time != cam_settings['a533mc']['param_time']:
+        f_camera_params(cam_name = 'a533mc', method = 'send_params_to_cam')
+        last_settings_time = cam_settings['a533mc']['param_time']
+    time.sleep(1)
+
 def f_a183mm_preview():
   global cam_a183mm, q_a183mm_raw, cam_settings, kill_thread
 
@@ -1026,6 +703,31 @@ def f_a183mm_preview():
           time.sleep(0.01)
           pass
 
+def f_a533mc_preview():
+  global cam_a533mc, q_a533mc_raw, cam_settings, kill_thread
+
+  last_frame_time = 0
+  while kill_thread == False:
+    time.sleep(0.01)
+    if 'info' in cam_settings['a533mc']:
+        try:
+          if os.path.isfile(cam_settings['a533mc']['info']['data_path']) and os.path.isfile(cam_settings['a533mc']['info']['time_path']):
+            f = open(cam_settings['a533mc']['info']['time_path'], 'r')
+            _time = float(f.read())
+            f.close()
+            if _time == last_frame_time:
+              continue
+            frame = {
+              'time': _time,
+              'raw_data': np.load(cam_settings['a533mc']['info']['data_path']),
+            }
+            q_a533mc_raw.append(frame)
+            cam_settings['a533mc']['frame_time'] = _time
+            last_frame_time = _time
+        except Exception as e:
+          #print(traceback.format_exc())
+          time.sleep(0.01)
+          pass
 
 
 def f_a462mc_settings():
@@ -1222,86 +924,140 @@ def f_canon_preview():
 
 #############################################################################################
 
-def f_a183mm_frame_processing():
-  global q_a183mm_raw, q_a183mm_ready, q_a183mm_platesolve
+
+def f_frame_processing_universal(q_raw, q_ready, q_platesolve, q_save_to_file, camname, cam_save_dirname, cam_exp_slider, cam_offset_slider, cam_gain_slider, cam_bin, cam_save_img, color_scheme):
+  global cam_settings
 
   while kill_thread == False:
-    while kill_thread == False and not q_a183mm_raw:
+    while kill_thread == False and not q_raw:
       time.sleep(0.1)
     if kill_thread:
       break
-    raw_frame = q_a183mm_raw.pop()
+    raw_frame = q_raw.pop()
     ready_frame = {
       'time': raw_frame['time']
     }
-    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_GRAY2RGB)
+    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], color_scheme)
     ready_frame['frameRGB'] = (ready_frame['frame16']/256).astype('uint8')
     ready_frame['gray'] = cv2.cvtColor(ready_frame['frameRGB'], cv2.COLOR_RGB2GRAY)
+    c = np.percentile(ready_frame['frame16'],[0,1,50,99,99.99])
+    ready_frame['percentile_stat'] = "0: " + str(round(c[0])) + ",   1: " + str(round(c[1])) + ",   50: " + str(round(c[2])) + ",   99: " + str(round(c[3])) + ",   99.99: " + str(round(c[4]))
 
-    q_a183mm_ready.append(ready_frame)
-    q_a183mm_platesolve.append(ready_frame)
+    if cam_save_img.isChecked():
+      ready_frame['dirname'] = str(cam_save_dirname.text())
+      ready_frame['exposure'] = int(cam_exp_slider.value())
+      ready_frame['offset'] = int(cam_offset_slider.value())
+      ready_frame['gain'] = int(cam_gain_slider.value())
+      ready_frame['bin'] = int(cam_bin.currentText())
+      ready_frame['camname'] = camname
+      if camname in cam_settings.keys() and 'info' in cam_settings[camname].keys() and 'temperature' in cam_settings[camname]['info'].keys():
+        ready_frame['temperature'] = cam_settings[camname]['info']['temperature']
+        ready_frame['iscolor'] = cam_settings[camname]['info']['IsColorCam']
+      else:
+        ready_frame['temperature'] = 'nan'
+      q_save_to_file.append(ready_frame)
+
+    q_ready.append(ready_frame)
+    q_platesolve.append(ready_frame)
+
+def f_a183mm_frame_processing():
+  global q_a183mm_raw, q_a183mm_ready, q_a183mm_platesolve, q_a183mm_save_to_file
+  global screen, cam_settings
+
+  f_frame_processing_universal(
+    camname = 'a183mm',
+    q_raw = q_a183mm_raw,
+    q_ready = q_a183mm_ready,
+    q_platesolve = q_a183mm_platesolve,
+    q_save_to_file = q_a183mm_save_to_file,
+    cam_save_dirname = screen.a183mm_cam_save_dirname,
+    cam_exp_slider = screen.a183mm_cam_exp_slider,
+    cam_offset_slider = screen.a183mm_cam_offset_slider,
+    cam_gain_slider = screen.a183mm_cam_gain_slider,
+    cam_bin = screen.a183mm_cam_bin,
+    cam_save_img = screen.a183mm_cam_save_img,
+    color_scheme = cv2.COLOR_GRAY2RGB,
+  )
+
+def f_a533mc_frame_processing():
+  global q_a533mc_raw, q_a533mc_ready, q_a533mc_platesolve, q_a533mc_save_to_file
+  global screen, cam_settings
+
+  f_frame_processing_universal(
+    camname = 'a533mc',
+    q_raw = q_a533mc_raw,
+    q_ready = q_a533mc_ready,
+    q_platesolve = q_a533mc_platesolve,
+    q_save_to_file = q_a533mc_save_to_file,
+    cam_save_dirname = screen.a533mc_cam_save_dirname,
+    cam_exp_slider = screen.a533mc_cam_exp_slider,
+    cam_offset_slider = screen.a533mc_cam_offset_slider,
+    cam_gain_slider = screen.a533mc_cam_gain_slider,
+    cam_bin = screen.a533mc_cam_bin,
+    cam_save_img = screen.a533mc_cam_save_img,
+    color_scheme = cv2.COLOR_BAYER_RG2RGB,
+  )
 
 def f_a462mc_frame_processing():
-  global q_a462mc_raw, q_a462mc_ready, q_a462mc_platesolve
+  global q_a462mc_raw, q_a462mc_ready, q_a462mc_platesolve, q_a462mc_save_to_file
+  global screen, cam_settings
 
-  while kill_thread == False:
-    while kill_thread == False and not q_a462mc_raw:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    raw_frame = q_a462mc_raw.pop()
-    ready_frame = {
-      'time': raw_frame['time']
-    }
-    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_BAYER_RG2RGB)
-    ready_frame['frameRGB'] = (ready_frame['frame16']/256).astype('uint8')
-    ready_frame['gray'] = cv2.cvtColor(ready_frame['frameRGB'], cv2.COLOR_RGB2GRAY)
-
-    q_a462mc_ready.append(ready_frame)
-    q_a462mc_platesolve.append(ready_frame)
+  f_frame_processing_universal(
+    camname = 'a462mc',
+    q_raw = q_a462mc_raw,
+    q_ready = q_a462mc_ready,
+    q_platesolve = q_a462mc_platesolve,
+    q_save_to_file = q_a462mc_save_to_file,
+    cam_save_dirname = screen.a462mc_cam_save_dirname,
+    cam_exp_slider = screen.a462mc_cam_exp_slider,
+    cam_offset_slider = screen.a462mc_cam_offset_slider,
+    cam_gain_slider = screen.a462mc_cam_gain_slider,
+    cam_bin = screen.a462mc_cam_bin,
+    cam_save_img = screen.a462mc_cam_save_img,
+    color_scheme = cv2.COLOR_BAYER_RG2RGB,
+  )
 
 def f_a120mc_frame_processing():
-  global q_a120mc_raw, q_a120mc_ready, q_a120mc_platesolve
+  global q_a120mc_raw, q_a120mc_ready, q_a120mc_platesolve, q_a120mc_save_to_file
+  global screen, cam_settings
 
-  while kill_thread == False:
-    while kill_thread == False and not q_a120mc_raw:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    raw_frame = q_a120mc_raw.pop()
-    ready_frame = {
-      'time': raw_frame['time']
-    }
-    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_BAYER_GR2RGB)
-#    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_GRAY2RGB)
-    ready_frame['frameRGB'] = (ready_frame['frame16']/256).astype('uint8')
-    ready_frame['gray'] = cv2.cvtColor(ready_frame['frameRGB'], cv2.COLOR_RGB2GRAY)
-
-    q_a120mc_ready.append(ready_frame)
-    q_a120mc_platesolve.append(ready_frame)
+  f_frame_processing_universal(
+    camname = 'a120mc',
+    q_raw = q_a120mc_raw,
+    q_ready = q_a120mc_ready,
+    q_platesolve = q_a120mc_platesolve,
+    q_save_to_file = q_a120mc_save_to_file,
+    cam_save_dirname = screen.a120mc_cam_save_dirname,
+    cam_exp_slider = screen.a120mc_cam_exp_slider,
+    cam_offset_slider = screen.a120mc_cam_offset_slider,
+    cam_gain_slider = screen.a120mc_cam_gain_slider,
+    cam_bin = screen.a120mc_cam_bin,
+    cam_save_img = screen.a120mc_cam_save_img,
+    color_scheme = cv2.COLOR_BAYER_GR2RGB,
+  )
 
 def f_a120mm_frame_processing():
-  global q_a120mm_raw, q_a120mm_ready, q_a120mm_platesolve
+  global q_a120mm_raw, q_a120mm_ready, q_a120mm_platesolve, q_a120mm_save_to_file
+  global screen, cam_settings
 
-  while kill_thread == False:
-    while kill_thread == False and not q_a120mm_raw:
-      time.sleep(0.1)
-    if kill_thread:
-      break
-    raw_frame = q_a120mm_raw.pop()
-    ready_frame = {
-      'time': raw_frame['time']
-    }
-    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_GRAY2RGB)
-#    ready_frame['frame16'] = cv2.cvtColor(raw_frame['raw_data'], cv2.COLOR_BAYER_GR2RGB)
-    ready_frame['frameRGB'] = (ready_frame['frame16']/256).astype('uint8')
-    ready_frame['gray'] = cv2.cvtColor(ready_frame['frameRGB'], cv2.COLOR_RGB2GRAY)
-
-    q_a120mm_ready.append(ready_frame)
-    q_a120mm_platesolve.append(ready_frame)
+  f_frame_processing_universal(
+    camname = 'a120mm',
+    q_raw = q_a120mm_raw,
+    q_ready = q_a120mm_ready,
+    q_platesolve = q_a120mm_platesolve,
+    q_save_to_file = q_a120mm_save_to_file,
+    cam_save_dirname = screen.a120mm_cam_save_dirname,
+    cam_exp_slider = screen.a120mm_cam_exp_slider,
+    cam_offset_slider = screen.a120mm_cam_offset_slider,
+    cam_gain_slider = screen.a120mm_cam_gain_slider,
+    cam_bin = screen.a120mm_cam_bin,
+    cam_save_img = screen.a120mm_cam_save_img,
+    color_scheme = cv2.COLOR_GRAY2RGB,
+  )
 
 def f_canon_frame_processing():
   global q_canon_raw, q_canon_ready, q_canon_platesolve
+  global screen, cam_settings
 
   while kill_thread == False:
     while kill_thread == False and not q_canon_raw:
@@ -1413,14 +1169,16 @@ class Window(QWidget):
     self.lewy_tab5 = QWidget()
     self.lewy_tab6 = QWidget()
     self.lewy_tab7 = QWidget()
+    self.lewy_tab8 = QWidget()
     self.lewy_tab9 = QWidget()
     self.t_lewy.addTab(self.lewy_tab1, "POSITION")
     self.t_lewy.addTab(self.lewy_tab2, "183MM")
-    self.t_lewy.addTab(self.lewy_tab3, "462MC")
-    self.t_lewy.addTab(self.lewy_tab4, "120MM")
-    self.t_lewy.addTab(self.lewy_tab5, "120MC")
-    self.t_lewy.addTab(self.lewy_tab6, "CANON 20D")
-    self.t_lewy.addTab(self.lewy_tab7, "MISC")
+    self.t_lewy.addTab(self.lewy_tab3, "533MC")
+    self.t_lewy.addTab(self.lewy_tab4, "462MC")
+    self.t_lewy.addTab(self.lewy_tab5, "120MM")
+    self.t_lewy.addTab(self.lewy_tab6, "120MC")
+    self.t_lewy.addTab(self.lewy_tab7, "CANON 20D")
+    self.t_lewy.addTab(self.lewy_tab8, "MISC")
     self.t_lewy.addTab(self.lewy_tab9, "FILTERS")
 
     self.t_prawy = QWidget()
@@ -1435,14 +1193,16 @@ class Window(QWidget):
     self.prawy_tab6 = QWidget()
     self.prawy_tab7 = QWidget()
     self.prawy_tab8 = QWidget()
+    self.prawy_tab9 = QWidget()
     self.t_prawy.addTab(self.prawy_tab1, "183MM cam")
-    self.t_prawy.addTab(self.prawy_tab2, "462MC cam")
-    self.t_prawy.addTab(self.prawy_tab3, "120MM cam")
-    self.t_prawy.addTab(self.prawy_tab4, "120MC cam")
-    self.t_prawy.addTab(self.prawy_tab5, "CANON 20D")
-    self.t_prawy.addTab(self.prawy_tab6, "TYCHO2 solved")
-    self.t_prawy.addTab(self.prawy_tab7, "HD solved")
-    self.t_prawy.addTab(self.prawy_tab8, "SKY MAP")
+    self.t_prawy.addTab(self.prawy_tab2, "533MC cam")
+    self.t_prawy.addTab(self.prawy_tab3, "462MC cam")
+    self.t_prawy.addTab(self.prawy_tab4, "120MM cam")
+    self.t_prawy.addTab(self.prawy_tab5, "120MC cam")
+    self.t_prawy.addTab(self.prawy_tab6, "CANON 20D")
+    self.t_prawy.addTab(self.prawy_tab7, "TYCHO2 solved")
+    self.t_prawy.addTab(self.prawy_tab8, "HD solved")
+    self.t_prawy.addTab(self.prawy_tab9, "SKY MAP")
 
     layout.addWidget(self.t_lewy, stretch=1)
     layout.addWidget(self.t_prawy, stretch=4)
@@ -1461,6 +1221,7 @@ class Window(QWidget):
     self.tab5_lewyUI()
     self.tab6_lewyUI()
     self.tab7_lewyUI()
+    self.tab8_lewyUI()
     self.tab9_lewyUI()
     self.tab_1_prawyUI()
     self.tab_2_prawyUI()
@@ -1470,6 +1231,7 @@ class Window(QWidget):
     self.tab_6_prawyUI()
     self.tab_7_prawyUI()
     self.tab_8_prawyUI()
+    self.tab_9_prawyUI()
 
 #############################################################################################
 
@@ -1713,6 +1475,8 @@ class Window(QWidget):
     self.a183mm_cam_bri_sat_gam_rst = QPushButton('RST', self)
     self.a183mm_cam_bri_sat_gam_rst.clicked.connect(self.f_a183mm_cam_bri_sat_gam_rst)
 
+    self.lab_a183mm_cam_photo_pixel_stat = QLabel("0: 99999, 1: 99999, 50: 99999, 99: 99999, 100: 99999")
+
     self.graphWidget_a183mm = pg.PlotWidget()
     self.hist_color_a183mm = self.palette().color(QtGui.QPalette.Window)
     self.hist_pen_a183mm = pg.mkPen(color=(0,0,0))
@@ -1824,6 +1588,7 @@ class Window(QWidget):
     layout.addLayout(cam_a183mm_pic_adj3)
 
     layout.addWidget(separator4)
+    layout.addWidget(self.lab_a183mm_cam_photo_pixel_stat)
     layout.addWidget(self.graphWidget_a183mm)
 
     self.lewy_tab2.setLayout(layout)
@@ -1831,6 +1596,281 @@ class Window(QWidget):
 #############################################################################################
 
   def tab3_lewyUI(self):
+    global cam_settings
+    layout = QVBoxLayout()
+
+    separator1 = QFrame()
+    separator1.setFrameShape(QFrame.HLine)
+    separator2 = QFrame()
+    separator2.setFrameShape(QFrame.HLine)
+    separator3 = QFrame()
+    separator3.setFrameShape(QFrame.HLine)
+    separator4 = QFrame()
+    separator4.setFrameShape(QFrame.HLine)
+    separator5 = QFrame()
+    separator5.setFrameShape(QFrame.HLine)
+    separator6 = QFrame()
+    separator6.setFrameShape(QFrame.HLine)
+
+    self.headline = QFont('SansSerif', 11, QFont.Bold)
+
+    self.lab_a533mc_cam = QLabel("ASI533MC PRO CAM")
+    self.lab_a533mc_cam.setFont(self.headline)
+    self.lab_a533mc_cam.setAlignment(Qt.AlignCenter)
+
+    self.lab_a533mc_cam_time_param = QLabel("Last param set: -1s ago")
+    self.lab_a533mc_cam_time_frame = QLabel("Last frame time: -1s ago")
+    self.lab_a533mc_cam_time_disp_frame = QLabel("Displayed frame made: -1s ago")
+    self.lab_a533mc_cam_temp = QLabel("Sensor temp: 999 Celsius")
+    self.lab_a533mc_rotate = QLabel("Rotate: null")
+    self.lab_a533mc_cooling = QLabel("Cooler: NULL")
+
+    self.a533mc_cam_exp_slider = QDoubleSpinBox()
+    self.a533mc_cam_exp_slider.valueChanged.connect(self.f_a533mc_cam_params_changed)
+    self.a533mc_cam_exp_gain_depl = QLabel("Exposure set: X us")
+
+    self.a533mc_cam_gain_slider = QSpinBox()
+    self.a533mc_cam_gain_slider.valueChanged.connect(self.f_a533mc_cam_params_changed)
+
+    self.a533mc_cam_offset_slider = QSpinBox()
+    self.a533mc_cam_offset_slider.valueChanged.connect(self.f_a533mc_cam_params_changed)
+
+    self.a533mc_cam_cooler = QCheckBox()
+    self.a533mc_cam_cooler.setChecked(False)
+    self.a533mc_cam_cooler.stateChanged.connect(self.f_a533mc_cam_params_changed)
+
+    self.a533mc_cam_bin = QComboBox()
+    self.a533mc_cam_bin.addItems(['NULL'])
+    self.a533mc_cam_bin.currentIndexChanged.connect(self.f_a533mc_cam_params_changed)
+
+    self.a533mc_cam_target_temp_slider = QSpinBox()
+    self.a533mc_cam_target_temp_slider.valueChanged.connect(self.f_a533mc_cam_params_changed)
+
+    self.a533mc_cam_reset_settings_button = QPushButton('RST settings', self)
+    self.a533mc_cam_reset_settings_button.clicked.connect(self.f_a533mc_cam_reset_settings)
+    self.a533mc_photo_reload = QPushButton('Reload', self)
+    self.a533mc_photo_reload.clicked.connect(self.f_a533mc_window_refresh)
+
+    self.a533mc_photo_rotate = QPushButton('Rot', self)
+    self.a533mc_photo_rotate.clicked.connect(self.f_a533mc_rotate)
+
+    self.a533mc_cam_save_img = QCheckBox()
+    self.a533mc_cam_save_img.setChecked(False)
+
+    self.a533mc_cam_save_dirname = QLineEdit(self)
+    self.a533mc_cam_save_dirname.setMaxLength(50)
+    regex1 = QRegExp('^[a-z0-9_\-]+$')
+    validator1 = QRegExpValidator(regex1)
+    self.a533mc_cam_save_dirname.setValidator(validator1)
+    self.a533mc_cam_save_dirname.setText('teleskop')
+
+    self.a533mc_cam_circ_x = QSpinBox()
+    self.a533mc_cam_circ_x.setMinimum(0)
+    self.a533mc_cam_circ_x.setMaximum(5496)
+    self.a533mc_cam_circ_x.setValue(int(5496/2))
+
+    self.a533mc_cam_circ_y = QSpinBox()
+    self.a533mc_cam_circ_y.setMinimum(0)
+    self.a533mc_cam_circ_y.setMaximum(3672)
+    self.a533mc_cam_circ_y.setValue(int(3672/2))
+
+    self.a533mc_cam_circ_d = QSpinBox()
+    self.a533mc_cam_circ_d.setMinimum(0)
+    self.a533mc_cam_circ_d.setMaximum(1936)
+    self.a533mc_cam_circ_d.setValue(0)
+
+    self.a533mc_cam_circ_c = QSpinBox()
+    self.a533mc_cam_circ_c.setMinimum(0)
+    self.a533mc_cam_circ_c.setMaximum(2000)
+    self.a533mc_cam_circ_c.setValue(0)
+
+    self.a533mc_b_plate_solve = QPushButton('Solve plate and upd. coords', self)
+    self.a533mc_b_plate_solve.clicked.connect(self.f_a533mc_plate_solve)
+
+    self.a533mc_b_plate_solve_cancel = QPushButton('Cancel', self)
+    self.a533mc_b_plate_solve_cancel.clicked.connect(self.f_a533mc_platesolve_stop)
+
+    self.lab_a533mc_plate_solve_status = QLabel("Plate solve status: NULL")
+
+    self.a533mc_cam_scale_pixel_size = QDoubleSpinBox()
+    self.a533mc_cam_scale_pixel_size.setMinimum(0.1)
+    self.a533mc_cam_scale_pixel_size.setMaximum(99.0)
+    self.a533mc_cam_scale_pixel_size.setValue(3.76)
+    self.a533mc_cam_scale_pixel_size.valueChanged.connect(self.f_a533mc_cam_pix_scale_calc)
+
+    self.a533mc_cam_scale_focal = QSpinBox()
+    self.a533mc_cam_scale_focal.setMinimum(1)
+    self.a533mc_cam_scale_focal.setMaximum(9999)
+    self.a533mc_cam_scale_focal.setValue(2450)
+    self.a533mc_cam_scale_focal.valueChanged.connect(self.f_a533mc_cam_pix_scale_calc)
+
+    self.a533mc_cam_scale_pixel_scale = QDoubleSpinBox()
+    self.a533mc_cam_scale_pixel_scale.setMinimum(0.0)
+    self.a533mc_cam_scale_pixel_scale.setMaximum(999.0)
+    self.a533mc_cam_scale_pixel_scale.setValue(0.24)
+
+    self.a533mc_cam_bri = QSpinBox()
+    self.a533mc_cam_bri.setValue(0)
+    self.a533mc_cam_bri.setMinimum(-255)
+    self.a533mc_cam_bri.setMaximum(255)
+
+    self.a533mc_cam_sat = QDoubleSpinBox()
+    self.a533mc_cam_sat.setValue(1.0)
+    self.a533mc_cam_sat.setMinimum(0.0)
+    self.a533mc_cam_sat.setMaximum(10.0)
+    self.a533mc_cam_sat.setSingleStep(0.01)
+
+    self.a533mc_cam_gam = QDoubleSpinBox()
+    self.a533mc_cam_gam.setValue(1.0)
+    self.a533mc_cam_gam.setMinimum(0.0)
+    self.a533mc_cam_gam.setMaximum(10.0)
+    self.a533mc_cam_gam.setSingleStep(0.01)
+
+    self.a533mc_cam_inverse = QCheckBox()
+    self.a533mc_cam_inverse.setChecked(False)
+
+    self.a533mc_cam_hist_equal = QCheckBox()
+    self.a533mc_cam_hist_equal.setChecked(False)
+
+    self.a533mc_cam_normalize = QCheckBox()
+    self.a533mc_cam_normalize.setChecked(False)
+
+    self.a533mc_cam_normalize_l = QDoubleSpinBox()
+    self.a533mc_cam_normalize_l.setValue(0.0)
+    self.a533mc_cam_normalize_l.setMinimum(0.0)
+    self.a533mc_cam_normalize_l.setMaximum(100.0)
+    self.a533mc_cam_normalize_l.setSingleStep(0.01)
+
+    self.a533mc_cam_normalize_h = QDoubleSpinBox()
+    self.a533mc_cam_normalize_h.setMinimum(0.0)
+    self.a533mc_cam_normalize_h.setMaximum(100.0)
+    self.a533mc_cam_normalize_h.setSingleStep(0.01)
+    self.a533mc_cam_normalize_h.setValue(100.0)
+
+    self.a533mc_cam_bri_sat_gam_rst = QPushButton('RST', self)
+    self.a533mc_cam_bri_sat_gam_rst.clicked.connect(self.f_a533mc_cam_bri_sat_gam_rst)
+
+    self.lab_a533mc_cam_photo_pixel_stat = QLabel("0: 99999, 1: 99999, 50: 99999, 99: 99999, 100: 99999")
+
+    self.graphWidget_a533mc = pg.PlotWidget()
+    self.hist_color_a533mc = self.palette().color(QtGui.QPalette.Window)
+    self.hist_pen_a533mc = pg.mkPen(color=(0,0,0))
+    self.graphWidget_a533mc.plot(x=list(range(256)), y=list(range(256)), pen=self.hist_pen_a533mc)
+    self.graphWidget_a533mc.setBackground(self.hist_color_a533mc)
+    self.graphWidget_a533mc.hideAxis('bottom')
+    self.graphWidget_a533mc.hideAxis('left')
+
+
+    layout.addWidget(self.lab_a533mc_cam)
+    layout.addWidget(self.lab_a533mc_cam_time_param)
+    layout.addWidget(self.lab_a533mc_cam_time_frame)
+    layout.addWidget(self.lab_a533mc_cam_time_disp_frame)
+    layout.addWidget(self.lab_a533mc_rotate)
+    layout.addWidget(self.lab_a533mc_cam_temp)
+    layout.addWidget(self.lab_a533mc_cooling)
+    layout.addWidget(separator1)
+    layout.addWidget(self.a533mc_cam_exp_gain_depl)
+    layout.addWidget(separator2)
+
+    cam_a533mc_gain_layout = QHBoxLayout()
+    cam_a533mc_gain_layout.addWidget(QLabel("Exp:"))
+    cam_a533mc_gain_layout.addWidget(self.a533mc_cam_exp_slider)
+    cam_a533mc_gain_layout.addWidget(QLabel("ms"))
+    cam_a533mc_gain_layout.addWidget(QLabel("Gain:"))
+    cam_a533mc_gain_layout.addWidget(self.a533mc_cam_gain_slider)
+    cam_a533mc_gain_layout.addWidget(QLabel("Offset:"))
+    cam_a533mc_gain_layout.addWidget(self.a533mc_cam_offset_slider)
+    cam_a533mc_gain_layout.addStretch()
+    layout.addLayout(cam_a533mc_gain_layout)
+
+    cam_a533mc_temp_layout = QHBoxLayout()
+    cam_a533mc_temp_layout.addWidget(QLabel("Cooler EN: "))
+    cam_a533mc_temp_layout.addWidget(self.a533mc_cam_cooler)
+    cam_a533mc_temp_layout.addWidget(QLabel("Temp: "))
+    cam_a533mc_temp_layout.addWidget(self.a533mc_cam_target_temp_slider)
+    cam_a533mc_temp_layout.addStretch()
+    layout.addLayout(cam_a533mc_temp_layout)
+
+    cam_a533mc_butt_group2 = QHBoxLayout()
+    cam_a533mc_butt_group2.addWidget(self.a533mc_cam_reset_settings_button)
+    cam_a533mc_butt_group2.addWidget(self.a533mc_photo_reload)
+    cam_a533mc_butt_group2.addWidget(self.a533mc_photo_rotate)
+    cam_a533mc_butt_group2.addWidget(QLabel("bin:"))
+    cam_a533mc_butt_group2.addWidget(self.a533mc_cam_bin)
+    cam_a533mc_butt_group2.addStretch()
+    layout.addLayout(cam_a533mc_butt_group2)
+
+    cam_a533mc_butt_group3 = QHBoxLayout()
+    cam_a533mc_butt_group3.addWidget(QLabel("Cir X"))
+    cam_a533mc_butt_group3.addWidget(self.a533mc_cam_circ_x)
+    cam_a533mc_butt_group3.addWidget(QLabel("Y"))
+    cam_a533mc_butt_group3.addWidget(self.a533mc_cam_circ_y)
+    cam_a533mc_butt_group3.addWidget(QLabel("D"))
+    cam_a533mc_butt_group3.addWidget(self.a533mc_cam_circ_d)
+    cam_a533mc_butt_group3.addWidget(QLabel("C"))
+    cam_a533mc_butt_group3.addWidget(self.a533mc_cam_circ_c)
+    layout.addLayout(cam_a533mc_butt_group3)
+
+    cam_a533mc_butt_group4 = QHBoxLayout()
+    cam_a533mc_butt_group4.addWidget(QLabel("Save to file"))
+    cam_a533mc_butt_group4.addWidget(self.a533mc_cam_save_img)
+    cam_a533mc_butt_group4.addWidget(QLabel("Dirname"))
+    cam_a533mc_butt_group4.addWidget(self.a533mc_cam_save_dirname)
+    layout.addLayout(cam_a533mc_butt_group4)
+
+    cam_a533mc_butt_group5 = QHBoxLayout()
+    cam_a533mc_butt_group5.addWidget(self.a533mc_b_plate_solve)
+    cam_a533mc_butt_group5.addWidget(self.a533mc_b_plate_solve_cancel)
+    layout.addLayout(cam_a533mc_butt_group5)
+    layout.addWidget(self.lab_a533mc_plate_solve_status)
+    layout.addWidget(separator3)
+
+    cam_a533mc_pixel_scale = QHBoxLayout()
+    cam_a533mc_pixel_scale.addWidget(QLabel("Px size:"))
+    cam_a533mc_pixel_scale.addWidget(self.a533mc_cam_scale_pixel_size)
+    cam_a533mc_pixel_scale.addWidget(QLabel("F:"))
+    cam_a533mc_pixel_scale.addWidget(self.a533mc_cam_scale_focal)
+    cam_a533mc_pixel_scale.addWidget(QLabel("Px scale:"))
+    cam_a533mc_pixel_scale.addWidget(self.a533mc_cam_scale_pixel_scale)
+    layout.addLayout(cam_a533mc_pixel_scale)
+
+    cam_a533mc_pic_adj = QHBoxLayout()
+    cam_a533mc_pic_adj.addWidget(QLabel("BRI:"))
+    cam_a533mc_pic_adj.addWidget(self.a533mc_cam_bri)
+    cam_a533mc_pic_adj.addWidget(QLabel("SAT:"))
+    cam_a533mc_pic_adj.addWidget(self.a533mc_cam_sat)
+    cam_a533mc_pic_adj.addWidget(QLabel("GAM:"))
+    cam_a533mc_pic_adj.addWidget(self.a533mc_cam_gam)
+    layout.addLayout(cam_a533mc_pic_adj)
+
+    cam_a533mc_pic_adj2 = QHBoxLayout()
+    cam_a533mc_pic_adj2.addWidget(QLabel("INV:"))
+    cam_a533mc_pic_adj2.addWidget(self.a533mc_cam_inverse)
+    cam_a533mc_pic_adj2.addWidget(QLabel("HIST EQ:"))
+    cam_a533mc_pic_adj2.addWidget(self.a533mc_cam_hist_equal)
+    cam_a533mc_pic_adj2.addStretch()
+    cam_a533mc_pic_adj2.addWidget(self.a533mc_cam_bri_sat_gam_rst)
+    layout.addLayout(cam_a533mc_pic_adj2)
+
+    cam_a533mc_pic_adj3 = QHBoxLayout()
+    cam_a533mc_pic_adj3.addWidget(QLabel("NORM:"))
+    cam_a533mc_pic_adj3.addWidget(self.a533mc_cam_normalize)
+    cam_a533mc_pic_adj3.addWidget(QLabel("L:"))
+    cam_a533mc_pic_adj3.addWidget(self.a533mc_cam_normalize_l)
+    cam_a533mc_pic_adj3.addWidget(QLabel("H:"))
+    cam_a533mc_pic_adj3.addWidget(self.a533mc_cam_normalize_h)
+    cam_a533mc_pic_adj3.addStretch()
+    layout.addLayout(cam_a533mc_pic_adj3)
+
+    layout.addWidget(separator4)
+    layout.addWidget(self.lab_a533mc_cam_photo_pixel_stat)
+    layout.addWidget(self.graphWidget_a533mc)
+
+    self.lewy_tab3.setLayout(layout)
+
+#############################################################################################
+
+  def tab4_lewyUI(self):
     global cam_settings
     layout = QVBoxLayout()
 
@@ -1977,6 +2017,8 @@ class Window(QWidget):
     self.a462mc_cam_bri_sat_gam_rst = QPushButton('RST', self)
     self.a462mc_cam_bri_sat_gam_rst.clicked.connect(self.f_a462mc_cam_bri_sat_gam_rst)
 
+    self.lab_a462mc_cam_photo_pixel_stat = QLabel("0: 99999, 1: 99999, 50: 99999, 99: 99999, 100: 99999")
+
     self.graphWidget_a462mc = pg.PlotWidget()
     self.hist_color_a462mc = self.palette().color(QtGui.QPalette.Window)
     self.hist_pen_a462mc = pg.mkPen(color=(0,0,0))
@@ -2079,13 +2121,14 @@ class Window(QWidget):
     layout.addLayout(cam_a462mc_pic_adj3)
 
     layout.addWidget(separator4)
+    layout.addWidget(self.lab_a462mc_cam_photo_pixel_stat)
     layout.addWidget(self.graphWidget_a462mc)
 
-    self.lewy_tab3.setLayout(layout)
+    self.lewy_tab4.setLayout(layout)
 
 #############################################################################################
 
-  def tab4_lewyUI(self):
+  def tab5_lewyUI(self):
     global cam_settings
     layout = QVBoxLayout()
 
@@ -2159,6 +2202,13 @@ class Window(QWidget):
     self.a120mm_cam_save_img = QCheckBox()
     self.a120mm_cam_save_img.setChecked(False)
 
+    self.a120mm_cam_save_dirname = QLineEdit(self)
+    self.a120mm_cam_save_dirname.setMaxLength(50)
+    regex1 = QRegExp('^[a-z0-9_\-]+$')
+    validator1 = QRegExpValidator(regex1)
+    self.a120mm_cam_save_dirname.setValidator(validator1)
+    self.a120mm_cam_save_dirname.setText('teleskop')
+
     self.a120mm_b_plate_solve = QPushButton('Solve plate and upd. coords', self)
     self.a120mm_b_plate_solve.clicked.connect(self.f_a120mm_plate_solve)
     self.a120mm_b_plate_solve_cancel = QPushButton('Cancel', self)
@@ -2223,6 +2273,8 @@ class Window(QWidget):
     self.a120mm_cam_bri_sat_gam_rst = QPushButton('RST', self)
     self.a120mm_cam_bri_sat_gam_rst.clicked.connect(self.f_a120mm_cam_bri_sat_gam_rst)
 
+    self.lab_a120mm_cam_photo_pixel_stat = QLabel("0: 99999, 1: 99999, 50: 99999, 99: 99999, 100: 99999")
+
     self.graphWidget_a120mm = pg.PlotWidget()
     self.hist_color_a120mm = self.palette().color(QtGui.QPalette.Window)
     self.graphWidget_a120mm.plot(x=list(range(256)), y=list(range(256)), pen=self.hist_pen_gray)
@@ -2275,6 +2327,8 @@ class Window(QWidget):
     cam_a120mm_butt_group4 = QHBoxLayout()
     cam_a120mm_butt_group4.addWidget(QLabel("Save to file"))
     cam_a120mm_butt_group4.addWidget(self.a120mm_cam_save_img)
+    cam_a120mm_butt_group4.addWidget(QLabel("Dirname"))
+    cam_a120mm_butt_group4.addWidget(self.a120mm_cam_save_dirname)
     cam_a120mm_butt_group4.addStretch()
     layout.addLayout(cam_a120mm_butt_group4)
 
@@ -2323,13 +2377,14 @@ class Window(QWidget):
     layout.addLayout(cam_a120mm_pic_adj3)
 
     layout.addWidget(separator4)
+    layout.addWidget(self.lab_a120mm_cam_photo_pixel_stat)
     layout.addWidget(self.graphWidget_a120mm)
 
-    self.lewy_tab4.setLayout(layout)
+    self.lewy_tab5.setLayout(layout)
 
 #############################################################################################
 
-  def tab5_lewyUI(self):
+  def tab6_lewyUI(self):
     global cam_settings
     layout = QVBoxLayout()
 
@@ -2403,6 +2458,13 @@ class Window(QWidget):
     self.a120mc_cam_save_img = QCheckBox()
     self.a120mc_cam_save_img.setChecked(False)
 
+    self.a120mc_cam_save_dirname = QLineEdit(self)
+    self.a120mc_cam_save_dirname.setMaxLength(50)
+    regex1 = QRegExp('^[a-z0-9_\-]+$')
+    validator1 = QRegExpValidator(regex1)
+    self.a120mc_cam_save_dirname.setValidator(validator1)
+    self.a120mc_cam_save_dirname.setText('teleskop')
+
     self.a120mc_b_plate_solve = QPushButton('Solve plate and upd. coords', self)
     self.a120mc_b_plate_solve.clicked.connect(self.f_a120mc_plate_solve)
     self.a120mc_b_plate_solve_cancel = QPushButton('Cancel', self)
@@ -2467,6 +2529,8 @@ class Window(QWidget):
     self.a120mc_cam_bri_sat_gam_rst = QPushButton('RST', self)
     self.a120mc_cam_bri_sat_gam_rst.clicked.connect(self.f_a120mc_cam_bri_sat_gam_rst)
 
+    self.lab_a120mc_cam_photo_pixel_stat = QLabel("0: 99999, 1: 99999, 50: 99999, 99: 99999, 100: 99999")
+
     self.graphWidget_a120mc = pg.PlotWidget()
     self.hist_color_a120mc = self.palette().color(QtGui.QPalette.Window)
     self.graphWidget_a120mc.plot(x=list(range(256)), y=list(range(256)), pen=self.hist_pen_gray)
@@ -2519,6 +2583,8 @@ class Window(QWidget):
     cam_a120mc_butt_group4 = QHBoxLayout()
     cam_a120mc_butt_group4.addWidget(QLabel("Save to file"))
     cam_a120mc_butt_group4.addWidget(self.a120mc_cam_save_img)
+    cam_a120mc_butt_group4.addWidget(QLabel("Dirname"))
+    cam_a120mc_butt_group4.addWidget(self.a120mc_cam_save_dirname)
     cam_a120mc_butt_group4.addStretch()
     layout.addLayout(cam_a120mc_butt_group4)
 
@@ -2567,13 +2633,14 @@ class Window(QWidget):
     layout.addLayout(cam_a120mc_pic_adj3)
 
     layout.addWidget(separator4)
+    layout.addWidget(self.lab_a120mc_cam_photo_pixel_stat)
     layout.addWidget(self.graphWidget_a120mc)
 
-    self.lewy_tab5.setLayout(layout)
+    self.lewy_tab6.setLayout(layout)
 
 #############################################################################################
 
-  def tab6_lewyUI(self):
+  def tab7_lewyUI(self):
     global cam_settings
     layout = QVBoxLayout()
 
@@ -2796,11 +2863,11 @@ class Window(QWidget):
     layout.addWidget(separator4)
     layout.addWidget(self.graphWidget_canon)
 
-    self.lewy_tab6.setLayout(layout)
+    self.lewy_tab7.setLayout(layout)
 
 #############################################################################################
 
-  def tab7_lewyUI(self):
+  def tab8_lewyUI(self):
     layout = QVBoxLayout()
 
     self.headline = QFont('SansSerif', 11, QFont.Bold)
@@ -2975,7 +3042,7 @@ class Window(QWidget):
     layout.addLayout(bat_buttons_layout)
     layout.addWidget(self.solved_tabs_refresh)
 
-    self.lewy_tab7.setLayout(layout)
+    self.lewy_tab8.setLayout(layout)
 
 #############################################################################################
 
@@ -3066,66 +3133,76 @@ class Window(QWidget):
 #############################################################################################
 
   def tab_2_prawyUI(self):
-    global viewer_a462mc_deployed
+    global viewer_a533mc_deployed
     layout = QVBoxLayout()
-    self.viewer_a462mc = PhotoViewer(self)
-    layout.addWidget(self.viewer_a462mc)
+    self.viewer_a533mc = PhotoViewer(self)
+    layout.addWidget(self.viewer_a533mc)
     self.prawy_tab2.setLayout(layout)
-    viewer_a462mc_deployed = True
+    viewer_a533mc_deployed = True
 
 #############################################################################################
 
   def tab_3_prawyUI(self):
-    global viewer_a120mm_deployed
+    global viewer_a462mc_deployed
     layout = QVBoxLayout()
-    self.viewer_a120mm = PhotoViewer(self)
-    layout.addWidget(self.viewer_a120mm)
+    self.viewer_a462mc = PhotoViewer(self)
+    layout.addWidget(self.viewer_a462mc)
     self.prawy_tab3.setLayout(layout)
-    viewer_a120mm_deployed = True
+    viewer_a462mc_deployed = True
 
 #############################################################################################
 
   def tab_4_prawyUI(self):
-    global viewer_a120mc_deployed
+    global viewer_a120mm_deployed
     layout = QVBoxLayout()
-    self.viewer_a120mc = PhotoViewer(self)
-    layout.addWidget(self.viewer_a120mc)
+    self.viewer_a120mm = PhotoViewer(self)
+    layout.addWidget(self.viewer_a120mm)
     self.prawy_tab4.setLayout(layout)
-    viewer_a120mc_deployed = True
+    viewer_a120mm_deployed = True
 
 #############################################################################################
 
   def tab_5_prawyUI(self):
-    global viewer_canon_deployed
+    global viewer_a120mc_deployed
     layout = QVBoxLayout()
-    self.viewer_canon = PhotoViewer(self)
-    layout.addWidget(self.viewer_canon)
+    self.viewer_a120mc = PhotoViewer(self)
+    layout.addWidget(self.viewer_a120mc)
     self.prawy_tab5.setLayout(layout)
-    viewer_canon_deployed = True
+    viewer_a120mc_deployed = True
 
 #############################################################################################
 
   def tab_6_prawyUI(self):
+    global viewer_canon_deployed
     layout = QVBoxLayout()
-    self.viewer_tycho2 = PhotoViewer(self)
-    layout.addWidget(self.viewer_tycho2)
+    self.viewer_canon = PhotoViewer(self)
+    layout.addWidget(self.viewer_canon)
     self.prawy_tab6.setLayout(layout)
+    viewer_canon_deployed = True
 
 #############################################################################################
 
   def tab_7_prawyUI(self):
     layout = QVBoxLayout()
-    self.viewer_hd = PhotoViewer(self)
-    layout.addWidget(self.viewer_hd)
+    self.viewer_tycho2 = PhotoViewer(self)
+    layout.addWidget(self.viewer_tycho2)
     self.prawy_tab7.setLayout(layout)
 
 #############################################################################################
 
   def tab_8_prawyUI(self):
     layout = QVBoxLayout()
+    self.viewer_hd = PhotoViewer(self)
+    layout.addWidget(self.viewer_hd)
+    self.prawy_tab8.setLayout(layout)
+
+#############################################################################################
+
+  def tab_9_prawyUI(self):
+    layout = QVBoxLayout()
     self.viewer_skymap = QWebEngineView()
     layout.addWidget(self.viewer_skymap)
-    self.prawy_tab8.setLayout(layout)
+    self.prawy_tab9.setLayout(layout)
 
 #############################################################################################
 
@@ -3137,6 +3214,9 @@ class Window(QWidget):
 
   def f_a183mm_platesolve_stop(self):
     out = subprocess.check_output(['rm', '-rf', '/dev/shm/a183mm_platesolve/frame.axy'])
+
+  def f_a533mc_platesolve_stop(self):
+    out = subprocess.check_output(['rm', '-rf', '/dev/shm/a533mc_platesolve/frame.axy'])
 
   def f_a462mc_platesolve_stop(self):
     out = subprocess.check_output(['rm', '-rf', '/dev/shm/a462mc_platesolve/frame.axy'])
@@ -3216,6 +3296,19 @@ class Window(QWidget):
   def f_a183mm_cam_pix_scale_calc(self,val):
     self.a183mm_cam_scale_pixel_scale.setValue(float(float(self.a183mm_cam_scale_pixel_size.value()) * 206.265 / float(self.a183mm_cam_scale_focal.value())))
 
+  def f_a533mc_cam_bri_sat_gam_rst(self):
+    self.a533mc_cam_bri.setValue(0)
+    self.a533mc_cam_sat.setValue(1.0)
+    self.a533mc_cam_gam.setValue(1.0)
+    self.a533mc_cam_inverse.setChecked(False)
+    self.a533mc_cam_hist_equal.setChecked(False)
+    self.a533mc_cam_normalize.setChecked(False)
+    self.a533mc_cam_normalize_l.setValue(0.0)
+    self.a533mc_cam_normalize_h.setValue(100.0)
+
+  def f_a533mc_cam_pix_scale_calc(self,val):
+    self.a533mc_cam_scale_pixel_scale.setValue(float(float(self.a533mc_cam_scale_pixel_size.value()) * 206.265 / float(self.a533mc_cam_scale_focal.value())))
+
   def f_a462mc_cam_bri_sat_gam_rst(self):
     self.a462mc_cam_bri.setValue(0)
     self.a462mc_cam_sat.setValue(1.0)
@@ -3271,6 +3364,9 @@ class Window(QWidget):
   def f_a183mm_cam_pix_scale_calc(self,val):
     self.a183mm_cam_scale_pixel_scale.setValue(float(float(self.a183mm_cam_scale_pixel_size.value()) * 206.265 / float(self.a183mm_cam_scale_focal.value())))
 
+  def f_a533mc_cam_pix_scale_calc(self,val):
+    self.a533mc_cam_scale_pixel_scale.setValue(float(float(self.a533mc_cam_scale_pixel_size.value()) * 206.265 / float(self.a533mc_cam_scale_focal.value())))
+
   def f_a462mc_cam_pix_scale_calc(self,val):
     self.a462mc_cam_scale_pixel_scale.setValue(float(float(self.a462mc_cam_scale_pixel_size.value()) * 206.265 / float(self.a462mc_cam_scale_focal.value())))
 
@@ -3286,25 +3382,9 @@ class Window(QWidget):
     global run_plate_solve_canon
     run_plate_solve_canon = True
 
-  def f_a120mc_plate_solve_status_refresh(self):
-    global run_plate_solve_a120mc, plate_solve_a120mc_status, t_telescope
-    self.lab_a120mc_plate_solve_status.setText('Plate solve status: ' + str(plate_solve_a120mc_status))
-
-  def f_a120mm_plate_solve_status_refresh(self):
-    global run_plate_solve_a120mm, plate_solve_a120mm_status, t_telescope
-    self.lab_a120mm_plate_solve_status.setText('Plate solve status: ' + str(plate_solve_a120mm_status))
-
-  def f_canon_plate_solve_status_refresh(self):
-    global run_plate_solve_canon, plate_solve_canon_status, t_telescope
-    self.lab_canon_plate_solve_status.setText('Plate solve status: ' + str(plate_solve_canon_status))
-
   def f_a183mm_plate_solve(self):
     global run_plate_solve_a183mm
     run_plate_solve_a183mm = True
-
-  def f_a183mm_plate_solve_status_refresh(self):
-    global run_plate_solve_a183mm, plate_solve_a183mm_status, t_telescope
-    self.lab_a183mm_plate_solve_status.setText('Plate solve status: ' + str(plate_solve_a183mm_status))
 
   def f_a183mm_cam_update_values(self, load_slider = False):
     global cam_settings
@@ -3387,14 +3467,94 @@ class Window(QWidget):
         self.a183mm_cam_bin.addItem('NULL')
         self.a183mm_cam_bin.setCurrentIndex(0)
 
+  def f_a533mc_plate_solve(self):
+    global run_plate_solve_a533mc
+    run_plate_solve_a533mc = True
+
+  def f_a533mc_cam_update_values(self, load_slider = False):
+    global cam_settings
+
+    curr_time = time.time()
+    if 'param_time' in cam_settings['a533mc']:
+      self.lab_a533mc_cam_time_param.setText("Last param set: " + str(format(curr_time - cam_settings['a533mc']['param_time'], '.1f')) + "s ago")
+    else:
+      self.lab_a533mc_cam_time_param.setText("Last param set: NULL")
+    if 'frame_time' in cam_settings['a533mc']:
+      self.lab_a533mc_cam_time_frame.setText("Last frame time: " + str(format(curr_time - cam_settings['a533mc']['frame_time'], '.1f')) + "s ago")
+    else:
+      self.lab_a533mc_cam_time_frame.setText("Last frame time: NULL")
+    if 'disp_frame_time' in cam_settings['a533mc']:
+      self.lab_a533mc_cam_time_disp_frame.setText("Displayed frame made: " + str(format(curr_time - cam_settings['a533mc']['disp_frame_time'], '.1f')) + "s ago")
+    else:
+      self.lab_a533mc_cam_time_disp_frame.setText("Displayed frame made: NULL")
+    if 'info' in cam_settings['a533mc'] and 'temperature' in cam_settings['a533mc']['info']:
+      self.lab_a533mc_cam_temp.setText("Sensor temp: " + str(cam_settings['a533mc']['info']['temperature']) + " Celsius")
+    else:
+      self.lab_a533mc_cam_temp.setText("Sensor temp: NULL")
+    if 'Exposure' in cam_settings['a533mc'] and 'Gain' in cam_settings['a533mc']:
+      self.a533mc_cam_exp_gain_depl.setText("Exp: " + str(cam_settings['a533mc']['Exposure']['depl']/1000) + " ms; Gain: " + str(cam_settings['a533mc']['Gain']['depl']) + " pt; Offset: " + str(cam_settings['a533mc']['Offset']['depl']))
+    else:
+      self.a533mc_cam_exp_gain_depl.setText("Exp: NULL")
+    if 'rotate' in cam_settings['a533mc'] and 'HardwareBin' in cam_settings['a533mc']:
+      self.lab_a533mc_rotate.setText("Rotate: " + str(cam_settings['a533mc']['rotate']) + "; Bin: " + str(cam_settings['a533mc']['HardwareBin']['depl']))
+    else:
+      self.lab_a533mc_rotate.setText("Rotate: NULL")
+    if 'CoolerOn' in cam_settings['a533mc'] and 'info' in cam_settings['a533mc'] and 'cooler_pwr' in cam_settings['a533mc']['info']:
+      self.lab_a533mc_cooling.setText("Cooler on: " + str(cam_settings['a533mc']['CoolerOn']['Value']) + "; PWR: " + str(cam_settings['a533mc']['info']['cooler_pwr']) )
+    else:
+      self.lab_a533mc_cooling.setText("Cooling: NULL")
+
+    if load_slider:
+      if 'Exposure' in cam_settings['a533mc']:
+        self.a533mc_cam_exp_slider.setMinimum(cam_settings['a533mc']['Exposure']['MinValue']/1000)
+        self.a533mc_cam_exp_slider.setMaximum(cam_settings['a533mc']['Exposure']['MaxValue']/1000)
+        self.a533mc_cam_exp_slider.setValue(cam_settings['a533mc']['Exposure']['Value']/1000)
+      else:
+        self.a533mc_cam_exp_slider.setMinimum(0)
+        self.a533mc_cam_exp_slider.setMaximum(0)
+        self.a533mc_cam_exp_slider.setValue(0)
+      if 'Gain' in cam_settings['a533mc']:
+        self.a533mc_cam_gain_slider.setMinimum(cam_settings['a533mc']['Gain']['MinValue'])
+        self.a533mc_cam_gain_slider.setMaximum(cam_settings['a533mc']['Gain']['MaxValue'])
+        self.a533mc_cam_gain_slider.setValue(cam_settings['a533mc']['Gain']['Value'])
+      else:
+        self.a533mc_cam_gain_slider.setMinimum(0)
+        self.a533mc_cam_gain_slider.setMaximum(0)
+        self.a533mc_cam_gain_slider.setValue(0)
+      if 'Offset' in cam_settings['a533mc']:
+        self.a533mc_cam_offset_slider.setMinimum(cam_settings['a533mc']['Offset']['MinValue'])
+        self.a533mc_cam_offset_slider.setMaximum(cam_settings['a533mc']['Offset']['MaxValue'])
+        self.a533mc_cam_offset_slider.setValue(cam_settings['a533mc']['Offset']['Value'])
+      else:
+        self.a533mc_cam_offset_slider.setMinimum(0)
+        self.a533mc_cam_offset_slider.setMaximum(0)
+        self.a533mc_cam_offset_slider.setValue(0)
+      if 'TargetTemp' in cam_settings['a533mc']:
+        self.a533mc_cam_target_temp_slider.setMinimum(cam_settings['a533mc']['TargetTemp']['MinValue'])
+        self.a533mc_cam_target_temp_slider.setMaximum(cam_settings['a533mc']['TargetTemp']['MaxValue'])
+        self.a533mc_cam_target_temp_slider.setValue(cam_settings['a533mc']['TargetTemp']['Value'])
+      else:
+        self.a533mc_cam_target_temp_slider.setMinimum(0)
+        self.a533mc_cam_target_temp_slider.setMaximum(0)
+        self.a533mc_cam_target_temp_slider.setValue(0)
+      if 'CoolerOn' in cam_settings['a533mc']:
+        if cam_settings['a533mc']['CoolerOn']['Value'] == 0:
+          self.a533mc_cam_cooler.setChecked(False)
+        else:
+          self.a533mc_cam_cooler.setChecked(True)
+      if 'HardwareBin' in cam_settings['a533mc']:
+        self.a533mc_cam_bin.clear()
+        for i in range(cam_settings['a533mc']['HardwareBin']['MinValue'], cam_settings['a533mc']['HardwareBin']['MaxValue']+1):
+          self.a533mc_cam_bin.addItem(str(i))
+        self.a533mc_cam_bin.setCurrentIndex(0)
+      else:
+        self.a533mc_cam_bin.clear()
+        self.a533mc_cam_bin.addItem('NULL')
+        self.a533mc_cam_bin.setCurrentIndex(0)
 
   def f_a462mc_plate_solve(self):
     global run_plate_solve_a462mc
     run_plate_solve_a462mc = True
-
-  def f_a462mc_plate_solve_status_refresh(self):
-    global run_plate_solve_a462mc, plate_solve_a462mc_status, t_telescope
-    self.lab_a462mc_plate_solve_status.setText('Plate solve status: ' + str(plate_solve_a462mc_status))
 
   def f_a462mc_cam_update_values(self, load_slider = False):
     global cam_settings
@@ -3599,27 +3759,21 @@ class Window(QWidget):
     self.lab_canon_rotate.setText("Rotate: " + str(cam_settings['canon']['rotate']))
 
   def f_a120mc_cam_reset_settings(self):
-    global cam_settings
-    cam_settings['a120mc']['Exposure']['Value'] = cam_settings['a120mc']['Exposure']['DefaultValue']
-    cam_settings['a120mc']['Gain']['Value'] = cam_settings['a120mc']['Gain']['DefaultValue']
-    cam_settings['a120mc']['Offset']['Value'] = cam_settings['a120mc']['Offset']['DefaultValue']
-    self.f_a120mc_cam_update_values(load_slider=True)
+    self.a120mc_cam_exp_slider.setValue(1000)
+    self.a120mc_cam_offset_slider.setValue(2)
+    self.a120mc_cam_gain_slider.setValue(99)
     self.f_a120mc_cam_params_changed()
 
   def f_a120mm_cam_reset_settings(self):
-    global cam_settings
-    cam_settings['a120mm']['Exposure']['Value'] = cam_settings['a120mm']['Exposure']['DefaultValue']
-    cam_settings['a120mm']['Offset']['Value'] = cam_settings['a120mm']['Offset']['DefaultValue']
-    cam_settings['a120mm']['Gain']['Value'] = cam_settings['a120mm']['Gain']['DefaultValue']
-    self.f_a120mm_cam_update_values(load_slider=True)
+    self.a120mm_cam_exp_slider.setValue(1000)
+    self.a120mm_cam_offset_slider.setValue(2)
+    self.a120mm_cam_gain_slider.setValue(99)
     self.f_a120mm_cam_params_changed()
 
   def f_a183mm_cam_reset_settings(self):
-    global cam_settings
-    cam_settings['a183mm']['Exposure']['Value'] = cam_settings['a183mm']['Exposure']['DefaultValue']
-    cam_settings['a183mm']['Offset']['Value'] = cam_settings['a183mm']['Offset']['DefaultValue']
-    cam_settings['a183mm']['Gain']['Value'] = cam_settings['a183mm']['Gain']['DefaultValue']
-    self.f_a183mm_cam_update_values(load_slider=True)
+    self.a183mm_cam_exp_slider.setValue(1000)
+    self.a183mm_cam_offset_slider.setValue(10)
+    self.a183mm_cam_gain_slider.setValue(115)
     self.f_a183mm_cam_params_changed()
 
   def f_a183mm_cam_params_changed(self):
@@ -3640,12 +3794,34 @@ class Window(QWidget):
 
       cam_settings['a183mm']['param_time'] = time.time()
 
+  def f_a533mc_cam_reset_settings(self):
+    self.a533mc_cam_exp_slider.setValue(1000)
+    self.a533mc_cam_offset_slider.setValue(40)
+    self.a533mc_cam_gain_slider.setValue(110)
+    self.f_a533mc_cam_params_changed()
+
+  def f_a533mc_cam_params_changed(self):
+    global viewer_a533mc_deployed, cam_settings
+
+    if viewer_a533mc_deployed:
+      cam_settings['a533mc']['Exposure']['Value'] = int(self.a533mc_cam_exp_slider.value()*1000)
+      cam_settings['a533mc']['Offset']['Value'] = int(self.a533mc_cam_offset_slider.value())
+      cam_settings['a533mc']['Gain']['Value'] = int(self.a533mc_cam_gain_slider.value())
+      cam_settings['a533mc']['TargetTemp']['Value'] = int(self.a533mc_cam_target_temp_slider.value())
+      if self.a533mc_cam_bin.currentText() != '':
+        cam_settings['a533mc']['HardwareBin']['Value'] = int(self.a533mc_cam_bin.currentText())
+
+      if self.a533mc_cam_cooler.isChecked():
+        cam_settings['a533mc']['CoolerOn']['Value'] = 1
+      else:
+        cam_settings['a533mc']['CoolerOn']['Value'] = 0
+
+      cam_settings['a533mc']['param_time'] = time.time()
+
   def f_a462mc_cam_reset_settings(self):
-    global cam_settings
-    cam_settings['a462mc']['Exposure']['Value'] = cam_settings['a462mc']['Exposure']['DefaultValue']
-    cam_settings['a462mc']['Offset']['Value'] = cam_settings['a462mc']['Offset']['DefaultValue']
-    cam_settings['a462mc']['Gain']['Value'] = cam_settings['a462mc']['Gain']['DefaultValue']
-    self.f_a462mc_cam_update_values(load_slider=True)
+    self.a462mc_cam_exp_slider.setValue(1000)
+    self.a462mc_cam_offset_slider.setValue(10)
+    self.a462mc_cam_gain_slider.setValue(90)
     self.f_a462mc_cam_params_changed()
 
   def f_a462mc_cam_params_changed(self):
@@ -3725,9 +3901,7 @@ class Window(QWidget):
                                     cam_circ_y = self.a120mc_cam_circ_y.value(),
                                     graph_obj = self.graphWidget_a120mc,
                                     viewer_obj = self.viewer_a120mc,
-                                    cam_save_img = self.a120mc_cam_save_img,
-                                    cam_save_dirname = '',
-                                    q_save_to_file = q_a120mc_save_to_file,
+                                    pixel_stat = self.lab_a120mc_cam_photo_pixel_stat,
                                     )
     return
 
@@ -3750,9 +3924,7 @@ class Window(QWidget):
                                     cam_circ_y = self.a120mm_cam_circ_y.value(),
                                     graph_obj = self.graphWidget_a120mm,
                                     viewer_obj = self.viewer_a120mm,
-                                    cam_save_img = self.a120mm_cam_save_img,
-                                    cam_save_dirname = '',
-                                    q_save_to_file = q_a120mm_save_to_file,
+                                    pixel_stat = self.lab_a120mm_cam_photo_pixel_stat,
                                     )
 
   def f_canon_window_refresh(self):
@@ -3768,15 +3940,12 @@ class Window(QWidget):
                                     cam_normalize = self.canon_cam_normalize,
                                     cam_normalize_l = self.canon_cam_normalize_l,
                                     cam_normalize_h = self.canon_cam_normalize_h,
-                                    cam_circ_d = self.canon_circ_d.value(),
-                                    cam_circ_c = self.canon_circ_c.value(),
-                                    cam_circ_x = self.canon_circ_x.value(),
-                                    cam_circ_y = self.canon_circ_y.value(),
+                                    cam_circ_d = self.canon_cam_circ_d.value(),
+                                    cam_circ_c = self.canon_cam_circ_c.value(),
+                                    cam_circ_x = self.canon_cam_circ_x.value(),
+                                    cam_circ_y = self.canon_cam_circ_y.value(),
                                     graph_obj = self.graphWidget_canon,
                                     viewer_obj = self.viewer_canon,
-                                    cam_save_img = self.canon_save_img,
-                                    cam_save_dirname = self.canon_save_dirname.text(),
-                                    q_save_to_file = q_canon_save_to_file,
                                     )
 
   def f_a120mc_window_refresh_event(self):
@@ -3794,6 +3963,10 @@ class Window(QWidget):
   def f_a183mm_rotate(self):
     global cam_settings
     cam_settings['a183mm']['rotate'] = (cam_settings['a183mm']['rotate'] + 90) % 360
+
+  def f_a533mc_rotate(self):
+    global cam_settings
+    cam_settings['a533mc']['rotate'] = (cam_settings['a533mc']['rotate'] + 90) % 360
 
   def f_a462mc_rotate(self):
     global cam_settings
@@ -3830,14 +4003,39 @@ class Window(QWidget):
                                     cam_circ_y = self.a183mm_cam_circ_y.value(),
                                     graph_obj = self.graphWidget_a183mm,
                                     viewer_obj = self.viewer_a183mm,
-                                    cam_save_img = self.a183mm_cam_save_img,
-                                    cam_save_dirname = self.a183mm_cam_save_dirname.text(),
-                                    q_save_to_file = q_a183mm_save_to_file,
+                                    pixel_stat = self.lab_a183mm_cam_photo_pixel_stat,
                                     )
 
 
   def f_a183mm_window_refresh_event(self):
     self.a183mm_photo_reload.click()
+
+
+  def f_a533mc_window_refresh(self):
+    global q_a533mc_ready, viewer_a533mc_deployed, cam_settings, q_a533mc_save_to_file
+    self.f_window_refresh_universal(cam_name = 'a533mc',
+                                    q_ready = q_a533mc_ready,
+                                    viewer_deployed = viewer_a533mc_deployed,
+                                    cam_inverse = self.a533mc_cam_inverse,
+                                    cam_sat = self.a533mc_cam_sat,
+                                    cam_bri = self.a533mc_cam_bri,
+                                    cam_gam = self.a533mc_cam_gam,
+                                    cam_hist_equal = self.a533mc_cam_hist_equal,
+                                    cam_normalize = self.a533mc_cam_normalize,
+                                    cam_normalize_l = self.a533mc_cam_normalize_l,
+                                    cam_normalize_h = self.a533mc_cam_normalize_h,
+                                    cam_circ_d = self.a533mc_cam_circ_d.value(),
+                                    cam_circ_c = self.a533mc_cam_circ_c.value(),
+                                    cam_circ_x = self.a533mc_cam_circ_x.value(),
+                                    cam_circ_y = self.a533mc_cam_circ_y.value(),
+                                    graph_obj = self.graphWidget_a533mc,
+                                    viewer_obj = self.viewer_a533mc,
+                                    pixel_stat = self.lab_a533mc_cam_photo_pixel_stat,
+                                    )
+
+
+  def f_a533mc_window_refresh_event(self):
+    self.a533mc_photo_reload.click()
 
 
   def f_a462mc_window_refresh(self):
@@ -3860,13 +4058,11 @@ class Window(QWidget):
                                     cam_circ_y = self.a462mc_cam_circ_y.value(),
                                     graph_obj = self.graphWidget_a462mc,
                                     viewer_obj = self.viewer_a462mc,
-                                    cam_save_img = self.a462mc_cam_save_img,
-                                    cam_save_dirname = self.a462mc_cam_save_dirname.text(),
-                                    q_save_to_file = q_a462mc_save_to_file,
+                                    pixel_stat = self.lab_a462mc_cam_photo_pixel_stat,
                                     )
 
 
-  def f_window_refresh_universal(self, q_ready, viewer_deployed, cam_name, cam_inverse, cam_sat, cam_bri, cam_gam, cam_hist_equal, cam_normalize, cam_normalize_l, cam_normalize_h, cam_circ_d, cam_circ_c, cam_circ_x, cam_circ_y, graph_obj, viewer_obj, cam_save_img, cam_save_dirname, q_save_to_file):
+  def f_window_refresh_universal(self, q_ready, viewer_deployed, cam_name, cam_inverse, cam_sat, cam_bri, cam_gam, cam_hist_equal, cam_normalize, cam_normalize_l, cam_normalize_h, cam_circ_d, cam_circ_c, cam_circ_x, cam_circ_y, graph_obj, viewer_obj, pixel_stat):
     if q_ready and viewer_deployed:
       frame = q_ready.pop()
 
@@ -3881,14 +4077,11 @@ class Window(QWidget):
       _frame = self.f_normalize(frame=_frame, normalize=cam_normalize.isChecked(), low=cam_normalize_l.value(), high=cam_normalize_h.value())
       _frame = self.f_circ(frame=_frame, d=cam_circ_d, c=cam_circ_c, x=cam_circ_x, y=cam_circ_y)
 
+      pixel_stat.setText(frame['percentile_stat'])
       #self.f_histogram(frame=_frame, graph_obj=graph_obj)
       self.f_viewer_frame(frame=_frame, viewer_obj=viewer_obj)
 
       cam_settings[cam_name]['disp_frame_time'] = frame['time']
-
-      if cam_save_img.isChecked():
-        frame['dirname'] = str(cam_save_dirname)
-        q_save_to_file.append(frame)
 
       if cam_settings[cam_name]['last_rotate'] != cam_settings[cam_name]['rotate']:
         viewer_obj.fitInView()
@@ -4062,6 +4255,8 @@ class Window(QWidget):
       self.t_prawy.setCurrentIndex(2)
     elif tab == 4:
       self.t_prawy.setCurrentIndex(3)
+    elif tab == 5:
+      self.t_prawy.setCurrentIndex(4)
 
   def f_shutdown(self):
     global kill_thread
@@ -4121,6 +4316,9 @@ thread_list.append(t)
 t = threading.Thread(target=f_a183mm_preview)
 thread_list.append(t)
 
+t = threading.Thread(target=f_a533mc_preview)
+thread_list.append(t)
+
 t = threading.Thread(target=f_photo_refresh)
 thread_list.append(t)
 
@@ -4128,6 +4326,9 @@ t = threading.Thread(target=f_a462mc_frame_processing)
 thread_list.append(t)
 
 t = threading.Thread(target=f_a183mm_frame_processing)
+thread_list.append(t)
+
+t = threading.Thread(target=f_a533mc_frame_processing)
 thread_list.append(t)
 
 t = threading.Thread(target=f_a120mm_frame_processing)
@@ -4154,6 +4355,12 @@ thread_list.append(t)
 t = threading.Thread(target=f_save_a183mm_img)
 thread_list.append(t)
 
+t = threading.Thread(target=f_a533mc_plate_solve_loop)
+thread_list.append(t)
+
+t = threading.Thread(target=f_save_a533mc_img)
+thread_list.append(t)
+
 t = threading.Thread(target=f_save_a120mm_img)
 thread_list.append(t)
 
@@ -4176,6 +4383,9 @@ t = threading.Thread(target=f_a462mc_settings)
 thread_list.append(t)
 
 t = threading.Thread(target=f_a183mm_settings)
+thread_list.append(t)
+
+t = threading.Thread(target=f_a533mc_settings)
 thread_list.append(t)
 
 t = threading.Thread(target=f_a120mc_settings)
